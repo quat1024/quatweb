@@ -1,86 +1,120 @@
 #[allow(unused_imports)]
 
-use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, path::PathBuf, sync::{Arc, Mutex}};
+mod post;
+
+use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::{Arc, Mutex}};
+use post::{Post, PostMap};
 use ramhorns::{Ramhorns, Content};
 use tokio::{runtime::Runtime};
 use warp::{Filter, http::StatusCode};
 
-type Horns = Arc<Mutex<Ramhorns>>;
+struct App {
+	ramhorns: Ramhorns,
+	posts: PostMap
+}
 
 fn main() {
 	//server setup
 	let rt = Runtime::new().unwrap();
 	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 80);
 	
-	//template engine
-	let horns = Arc::new(Mutex::new(init_ramhorns()));
-	
-	//routes
-	let static_pages = warp::fs::dir("www/static");
-	let post = post_route(horns.clone());
-	let reload = reload_ramhorns_route(horns);
-	
-	let routes = warp::get().and(
-		post.or(static_pages).or(reload)
-	);
-	
 	//let's go!
 	rt.block_on(async {
+		//template engine
+		let app = Arc::new(Mutex::new(init_app().await.expect("failed to initialize app")));
+		
+		//routes
+		let static_pages = warp::fs::dir("www/static");
+		let post = post_route(app.clone());
+		let reload = reload_app_route(app);
+		
+		let routes = warp::get().and(
+			post.or(static_pages).or(reload)
+		);
+	
 		warp::serve(routes).bind(addr).await;
 	});
 }
 
-fn init_ramhorns() -> Ramhorns {
-	Ramhorns::from_folder("www/template").expect("failed to init ramhorns")
-}
-
-fn with_horns(horns: Horns) -> impl Filter<Extract = (Horns,), Error = Infallible> + Clone {
-	warp::any().map(move || horns.clone())
-}
-
-fn reload_ramhorns_route(horns: Horns) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-	warp::path("reload_ramhorns").and(with_horns(horns)).map(|horns: Horns| {
-		let mut asdf = horns.lock().unwrap();
-		*asdf = init_ramhorns();
-		
-		"reloaded".to_string()
+async fn init_app() -> Result<App, Box<dyn std::error::Error>> {
+	Ok(App {
+		ramhorns: Ramhorns::from_folder("www/template")?,
+		posts: Post::all_in_dir("www/post").await?
 	})
 }
 
-fn post_route(horns: Horns) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-	warp::path!("post" / String).and(with_horns(horns)).and_then(render_post)
+fn with_app(app: Arc<Mutex<App>>) -> impl Filter<Extract = (Arc<Mutex<App>>,), Error = Infallible> + Clone {
+	warp::any().map(move || app.clone())
 }
 
-async fn render_post(post_name: String, horns: Horns) -> Result<impl warp::Reply, Infallible> {
-	let mut path: PathBuf = "www/post".into();
-	path.push(post_name);
-	path.set_extension("md");
+fn reload_app_route(app: Arc<Mutex<App>>) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+	warp::path("reload_ramhorns").and(with_app(app)).and_then(|app: Arc<Mutex<App>>| async move {
+		let new_app: Result<_, _> = init_app().await;
+		
+		match new_app {
+			Ok(napp) => {
+				let mut asdf = app.lock().unwrap();
+				*asdf = napp;
+				
+				Ok("reloaded".to_string()) as Result<_, Infallible>
+			},
+			Err(e) => {
+				Ok(format!("problem reloading: {}", e))
+			}
+		}
+	})
+}
+
+fn post_route(app: Arc<Mutex<App>>) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
+	warp::path!("post" / String).and(with_app(app)).and_then(render_post)
+}
+
+async fn render_post(post_name: String, app: Arc<Mutex<App>>) -> Result<impl warp::Reply, Infallible> {
+	let post = {
+		let app = app.lock().unwrap();
+		app.posts.get(&post_name)
+	};
 	
-	//todo parse some front matter as well
-	let post_markdown = tokio::fs::read_to_string(&path).await;
-	if post_markdown.is_err() {
+	if post.is_none() {
 		return Ok(warp::reply::with_status("not found".into(), StatusCode::NOT_FOUND));
 	}
-	let post_markdown = post_markdown.unwrap();
+	let post = post.unwrap();
 	
-	//let date: SystemTime = tokio::fs::metadata(&path).await.expect("could not read metadata").created().expect("could not read created time");
+	let post_contents = post.read_contents().await;
+	if post_contents.is_err() {
+		return Ok(warp::reply::with_status("problem reading posts".into(), StatusCode::INTERNAL_SERVER_ERROR));
+	}
+	let post_contents = post_contents.unwrap();
 	
 	#[derive(Content)]
-	struct Post {
-		title: String,
-		#[md]
+	struct FormattedPost<'a> {
+		slug: &'a str,
+		title: &'a str,
+		description: Option<&'a str>,
+		created_date: &'a str,
+		modified_date: Option<&'a str>,
 		post_contents: String
 	}
 	
-	let post = Post {
-		title: "post title lmao".into(),
-		post_contents: post_markdown
+	let post = FormattedPost {
+		slug: &post.slug,
+		title: &post.title,
+		description: post.description.as_ref().map(|s| s.as_ref()),
+		created_date: &post.created_date,
+		modified_date: post.modified_date.as_ref().map(|s| s.as_ref()),
+		post_contents
 	};
 	
-	let horns = horns.lock().unwrap();
-	let post_template = horns.get("post.html").expect("failed to get post template");
+	let post_template = {
+		let app = app.lock().unwrap();
+		app.ramhorns.get("post.html")
+	};
+	
+	if post_template.is_none() {
+		return Ok(warp::reply::with_status("could not read post template".into(), StatusCode::INTERNAL_SERVER_ERROR));
+	}
+	let post_template = post_template.unwrap();
 	
 	let rendered_post = post_template.render(&post);
-	
 	return Ok(warp::reply::with_status(rendered_post, StatusCode::OK));
 }
