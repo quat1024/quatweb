@@ -25,15 +25,17 @@ fn main() {
 		//routes
 		let static_pages = warp::fs::dir("www/static");
 		
-		let post_base = || warp::path("post").and(with_rwlock_app(app.clone()));
-		let post_index_route = post_base().and(warp::path::end()).and_then(handle_post_index);
-		let post_route = post_base().and(warp::path::param()).and_then(handle_post);
+		fn with_app(app: Arc<RwLock<Arc<App>>>) -> impl Filter<Extract = (Arc<RwLock<Arc<App>>>,), Error = Infallible> + Clone {
+			warp::any().map(move || app.clone())
+		}
 		
-		let reload_route = reload_route(app.clone());
+		let post_index_route = warp::path("post")  .and(with_app(app.clone())).and(warp::path::end())  .and_then(handle_post_index);
+		let post_route       = warp::path("post")  .and(with_app(app.clone())).and(warp::path::param()).and_then(handle_post);
+		let reload_route     = warp::path("reload").and(with_app(app.clone()))                         .and_then(handle_reload);
 		
 		let routes = warp::get().and(static_pages
-			.or(post_route)
 			.or(post_index_route)
+			.or(post_route)
 			.or(reload_route)
 		);
 	
@@ -47,10 +49,6 @@ async fn init_app() -> Result<App, Box<dyn std::error::Error>> {
 		ramhorns: Ramhorns::from_folder("www/template")?,
 		posts: Post::all_in_dir("www/post").await?
 	})
-}
-
-fn with_rwlock_app(app: Arc<RwLock<Arc<App>>>) -> impl Filter<Extract = (Arc<RwLock<Arc<App>>>,), Error = Infallible> + Clone {
-	warp::any().map(move || app.clone())
 }
 
 async fn handle_post(app: Arc<RwLock<Arc<App>>>, post_name: String) -> Result<impl Reply, Rejection> {
@@ -110,19 +108,17 @@ async fn handle_post_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rej
 	Ok(warp::reply::html(resp))
 }
 
-fn reload_route(app: Arc<RwLock<Arc<App>>>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
-	warp::path("refresh").and(with_rwlock_app(app)).and_then(|app: Arc<RwLock<Arc<App>>>| async move {
-		let new_app = {
-			let x = init_app().await;
-			if x.is_err() {
-				return Ok(format!("did not refresh app: {}", x.err().unwrap()));
-			}
-			x.unwrap()
-		};
-		
-		let mut a = app.write().unwrap();
-		*a = Arc::new(new_app);
-		
-		Ok("reloaded".into()) as Result<_, Infallible>
-	})
+async fn handle_reload(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
+	let new_app = {
+		let x = init_app().await;
+		if x.is_err() {
+			return Ok(format!("did not refresh app: {}", x.err().unwrap()));
+		}
+		x.unwrap()
+	};
+	
+	let mut a = app.write().unwrap();
+	*a = Arc::new(new_app);
+	
+	Ok("reloaded".into())
 }
