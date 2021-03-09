@@ -2,11 +2,11 @@
 
 mod post;
 
-use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::{Arc, Mutex}};
+use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::{Arc, RwLock}};
 use post::{Post, PostMap};
 use ramhorns::{Ramhorns, Content};
 use tokio::{runtime::Runtime};
-use warp::{Filter, http::StatusCode};
+use warp::{Filter, Rejection, Reply};
 
 struct App {
 	ramhorns: Ramhorns,
@@ -19,18 +19,25 @@ fn main() {
 	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 80);
 	
 	rt.block_on(async {
-		//template engine
-		let app = Arc::new(init_app().await.expect("failed to initialize app"));
+		//first time app startup
+		let app = Arc::new(RwLock::new(Arc::new(init_app().await.expect("failed to initialize app"))));
 		
 		//routes
 		let static_pages = warp::fs::dir("www/static");
-		let post = post_route(app.clone());
 		
-		let routes = warp::get().and(
-			post.or(static_pages)
+		let post_base = || warp::path("post").and(with_rwlock_app(app.clone()));
+		let post_index_route = post_base().and(warp::path::end()).and_then(handle_post_index);
+		let post_route = post_base().and(warp::path::param()).and_then(handle_post);
+		
+		let reload_route = reload_route(app.clone());
+		
+		let routes = warp::get().and(static_pages
+			.or(post_route)
+			.or(post_index_route)
+			.or(reload_route)
 		);
 	
-		//letsa go
+		//letsa go!
 		warp::serve(routes).bind(addr).await;
 	});
 }
@@ -42,26 +49,16 @@ async fn init_app() -> Result<App, Box<dyn std::error::Error>> {
 	})
 }
 
-fn with_app(app: Arc<App>) -> impl Filter<Extract = (Arc<App>,), Error = Infallible> + Clone {
+fn with_rwlock_app(app: Arc<RwLock<Arc<App>>>) -> impl Filter<Extract = (Arc<RwLock<Arc<App>>>,), Error = Infallible> + Clone {
 	warp::any().map(move || app.clone())
 }
 
-fn post_route(app: Arc<App>) -> impl Filter<Extract = impl warp::Reply, Error = warp::Rejection> + Clone {
-	warp::path!("post" / String).and(with_app(app)).and_then(render_post)
-}
-
-async fn render_post(post_name: String, app: Arc<App>) -> Result<impl warp::Reply, Infallible> {
-	let post = app.posts.get(&post_name);
-	if post.is_none() {
-		return Ok(warp::reply::with_status(warp::reply::html("not found".into()), StatusCode::NOT_FOUND));
-	}
-	let post = post.unwrap();
+async fn handle_post(app: Arc<RwLock<Arc<App>>>, post_name: String) -> Result<impl Reply, Rejection> {
+	let app = app.read().unwrap().clone();
+	let template = app.ramhorns.get("post.html").ok_or(PostRouteErr::RamhornsErr)?;
 	
-	let post_contents = post.read_contents().await;
-	if post_contents.is_err() {
-		return Ok(warp::reply::with_status(warp::reply::html("problem reading post".into()), StatusCode::INTERNAL_SERVER_ERROR));
-	}
-	let post_contents = post_contents.unwrap();
+	let post = app.posts.get(&post_name).ok_or(PostRouteErr::NoPost(post_name))?;
+	let contents = post.read_contents().await.map_err(PostRouteErr::ContentReadErr)?;
 	
 	#[derive(Content)]
 	struct FormattedPost<'a> {
@@ -71,24 +68,61 @@ async fn render_post(post_name: String, app: Arc<App>) -> Result<impl warp::Repl
 		created_date: &'a str,
 		modified_date: Option<&'a str>,
 		#[md]
-		post_contents: String
+		contents: String
 	}
-	
-	let post = FormattedPost {
+		
+	let formatted_post = FormattedPost {
 		slug: &post.slug,
 		title: &post.title,
 		description: post.description.as_ref().map(|s| s.as_ref()),
 		created_date: &post.created_date,
 		modified_date: post.modified_date.as_ref().map(|s| s.as_ref()),
-		post_contents
+		contents
 	};
 	
-	let post_template = app.ramhorns.get("post.html");
-	if post_template.is_none() {
-		return Ok(warp::reply::with_status(warp::reply::html("could not read post template".into()), StatusCode::INTERNAL_SERVER_ERROR));
-	}
-	let post_template = post_template.unwrap();
+	let rendered = template.render(&formatted_post);
 	
-	let rendered_post = post_template.render(&post);
-	return Ok(warp::reply::with_status(warp::reply::html(rendered_post), StatusCode::OK));
+	Ok(warp::reply::html(rendered))
+}
+
+#[derive(Debug)]
+enum PostRouteErr {
+	NoPost(String),
+	ContentReadErr(post::PostErr),
+	RamhornsErr
+}
+
+impl warp::reject::Reject for PostRouteErr {}
+
+async fn handle_post_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
+	let app = app.read().unwrap().clone();
+	
+	//todo use a template for this
+	let mut resp = String::new();
+	app.posts.values().for_each(|post| {
+		resp.push_str("post slug: ");
+		resp.push_str(&post.slug);
+		resp.push_str(" - title: ");
+		resp.push_str(&post.title);
+		resp.push_str("<br/>");
+	});
+	
+	Ok(warp::reply::html(resp))
+}
+
+fn reload_route(app: Arc<RwLock<Arc<App>>>) -> impl Filter<Extract = impl Reply, Error = Rejection> + Clone {
+	warp::path("refresh").and(with_rwlock_app(app)).and_then(|app: Arc<RwLock<Arc<App>>>| async move {
+		let new_app = {
+			let x = init_app().await;
+			if x.is_err() {
+				return Ok(format!("did not refresh app: {}", x.err().unwrap()));
+			}
+			x.unwrap()
+		};
+		
+		let mut a = app.write().unwrap();
+		*a = Arc::new(new_app);
+		
+		Ok("reloaded".into()) as Result<_, Infallible>
+	})
 }
