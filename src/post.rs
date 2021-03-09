@@ -12,7 +12,7 @@ pub struct Post {
 
 pub type PostMap = HashMap<String, Post>;
 
-static FRONT_MATTER_DELIMITER: &str = "---\n";
+static FRONT_MATTER_DELIMITER: &str = "---";
 
 impl Post {
 	pub async fn from_file(path: impl AsRef<Path>) -> Result<Post, PostErr> {
@@ -28,7 +28,7 @@ impl Post {
 		
 		let mut lines = reader.lines();
 		while let Some(line) = lines.next_line().await? {
-			if line == FRONT_MATTER_DELIMITER {
+			if line.starts_with(FRONT_MATTER_DELIMITER) {
 				break;
 			}
 			
@@ -80,8 +80,8 @@ impl Post {
 		
 		//TODO this sucks lmao
 		while let Some(line) = lines.next_line().await? {
-			if line != FRONT_MATTER_DELIMITER {
-				continue;
+			if line.trim().starts_with(FRONT_MATTER_DELIMITER) {
+				break;
 			}
 		}
 		
