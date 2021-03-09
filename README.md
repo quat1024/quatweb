@@ -15,4 +15,4 @@ Uses the [Warp](https://github.com/seanmonstar/warp) web server framework - rath
 
 Oi mate, you got a loicense for that code?
 
-I don't care, do what you want. No facists.
+I don't care, do what you want. No fascists.
