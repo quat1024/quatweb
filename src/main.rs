@@ -36,11 +36,15 @@ fn main() {
 			warp::any().map(move || app.clone())
 		}
 		
-		let post_index_route = warp::path("post")  .and(with_app(app.clone())).and(warp::path::end())  .and_then(handle_post_index);
-		let post_route       = warp::path("post")  .and(with_app(app.clone())).and(warp::path::param()).and_then(handle_post);
-		let reload_route     = warp::path("reload").and(with_app(app.clone()))                         .and_then(handle_reload);
+		let landing_route    = warp::path::end()           .and(with_app(app.clone())).and_then(handle_landing);
+		let discord_route    = warp::path!("discord")      .and(with_app(app.clone())).and_then(handle_discord);
+		let post_index_route = warp::path!("post")         .and(with_app(app.clone())).and_then(handle_post_index);
+		let post_route       = warp::path!("post" / String).and(with_app(app.clone())).and_then(handle_post);
+		let reload_route     = warp::path!("reload")       .and(with_app(app.clone())).and_then(handle_reload);
 		
 		let routes = warp::get().and(static_pages
+			.or(landing_route)
+			.or(discord_route)
 			.or(post_index_route)
 			.or(post_route)
 			.or(reload_route)
@@ -82,7 +86,43 @@ impl From<PostErr> for InitError {
 
 impl warp::reject::Reject for InitError {}
 
-async fn handle_post(app: Arc<RwLock<Arc<App>>>, post_name: String) -> Result<impl Reply, Rejection> {
+async fn handle_landing(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
+	let app = app.read().unwrap().clone();
+	let template = app.ramhorns.get("index.template.html").ok_or(PostRouteErr::NoTemplate)?;
+	
+	#[derive(Content)]
+	struct TemplatingContext<'a> {
+		posts: &'a Vec<&'a Post>,
+		context: &'a Context
+	}
+	
+	let templating_context = TemplatingContext {
+		posts: &app.posts.values().take(5).collect::<Vec<_>>(),
+		context: &app.context
+	};
+	
+	let rendered = template.render(&templating_context);
+	Ok(warp::reply::html(rendered))
+}
+
+async fn handle_discord(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
+	let app = app.read().unwrap().clone();
+	let template = app.ramhorns.get("discord.template.html").ok_or(PostRouteErr::NoTemplate)?;
+	
+	#[derive(Content)]
+	struct TemplatingContext<'a> {
+		context: &'a Context
+	}
+	
+	let templating_context = TemplatingContext {
+		context: &app.context
+	};
+	
+	let rendered = template.render(&templating_context);
+	Ok(warp::reply::html(rendered))
+}
+
+async fn handle_post(post_name: String, app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
 	let app = app.read().unwrap().clone();
 	let template = app.ramhorns.get("post.template.html").ok_or(PostRouteErr::NoTemplate)?;
 	
