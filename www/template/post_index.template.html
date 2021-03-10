@@ -1,8 +1,9 @@
 {{>shell_begin.template.html}}
+<h1>Post Index</h1>
+<p>All the posts!</p>
 {{#posts}}
-<section>
-	<h3>{{title}}</h3>
-	{{description}}
-</section>
+<ul>
+	<li><a href="/post/{{slug}}">{{post_title}}</a> - {{description}}</li>
+</ul>
 {{/posts}}
 {{>shell_end.template.html}}

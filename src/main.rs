@@ -113,6 +113,7 @@ async fn handle_post_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rej
 		context: &'a Context
 	}
 	
+	//TODO: It's unsorted!
 	let templating_context = TemplatingContext {
 		posts: &app.posts.values().collect::<Vec<_>>(),
 		context: &app.context
