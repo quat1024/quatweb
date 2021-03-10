@@ -1,5 +1,6 @@
 slug=spicy_post
 title=Spicy post
+author=quat
 description=Description of my spicy post
 created_date=Today
 ---

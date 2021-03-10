@@ -1,6 +1,7 @@
 {{>shell_begin.template.html}}
 {{#post}}
 <h1>{{post_title}}</h1>
+<div class="byline">{{author}}, {{created_date}}{{#modified_date}}(last {{modified_date}}){{/modified_date}}</div>
 {{{content}}}
 {{/post}}
 {{>shell_end.template.html}}

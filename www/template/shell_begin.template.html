@@ -9,14 +9,17 @@
 	</head>
 	<body>
 		<header>
-			<div class="logo" aria-hidden="true">
+			<a href="/" class="logo" aria-hidden="true">
 				<div class="circle1"></div>
 				<div class="cover1"></div>
 				<div class="circle2"></div>
 				<div class="cover2"></div>
 				<div class="iris"></div>
-			</div>
+			</a>
 			<h1><a href="/">Highly Suspect Agency</a></h1>
+			<div class="spacefiller"></div>
+			{{! NB: if you add more links remember to adjust the css media query so the header breaks at the right time}}
+			<span class="links"><a href="/post">Blog</a></span>
 		</header>
 		<article>
 {{/context}}

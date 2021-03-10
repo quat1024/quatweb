@@ -13,6 +13,7 @@ pub struct Post {
 #[derive(Content)]
 pub struct PostMetadata {
 	pub slug: String,
+	pub author: String,
 	#[ramhorns(rename = "post_title")]
 	pub title: String,
 	pub description: Option<String>,
@@ -76,6 +77,7 @@ impl Post {
 		
 		Ok(PostMetadata {
 			slug: kv.remove("slug").ok_or(PostErr::NoSlug)?,
+			author: kv.remove("author").ok_or(PostErr::NoAuthor)?,
 			title: kv.remove("title").ok_or(PostErr::NoTitle)?,
 			description: kv.remove("description"),
 			created_date: kv.remove("created_date").ok_or(PostErr::NoDate)?,
@@ -103,6 +105,7 @@ impl Post {
 pub enum PostErr {
 	Io(std::io::Error),
 	NoSlug,
+	NoAuthor,
 	NoTitle,
 	NoDate,
 	FrontMatterSyntax
@@ -119,6 +122,7 @@ impl Display for PostErr {
         match self {
 			PostErr::Io(e) => write!(f, "io error: {}", e),
 			PostErr::NoSlug => write!(f, "no post slug specified"),
+			PostErr::NoAuthor => write!(f, "no post author specified"),
 		    PostErr::NoTitle => write!(f, "no post title specified"),
             PostErr::NoDate => write!(f, "no creation date specified"),
             PostErr::FrontMatterSyntax => write!(f, "syntax error parsing the front-matter"),
