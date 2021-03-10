@@ -4,9 +4,14 @@
 	box-sizing: border-box;
 	font-family: "Roboto Mono", monospace;
 
-	--bgcolor: #151111;
-	--fgcolor: #cbc;
-	--fgaccent: #eee;
+	--fgcolor: #151111;
+	--fgaccent: #200000;
+	--bgcolor: #ffefef;
+	
+	--codeblockfg: white;
+	--codeblockbg: #222;
+	--codeinlinefg: #020202;
+	--codeinlinebg: #dccccc;
 }
 
 ::selection {
@@ -95,7 +100,7 @@ header .links {
 }
 
 article {
-	width: 50em;
+	width: 55em;
 	max-width: 90%;
 	margin: 0 auto;
 
@@ -125,7 +130,7 @@ article h1, article h2, article h3 {
 
 article h1:after, article h2:after {
 	content: "";
-	border-top: 2px solid white;
+	border-top: 2px solid var(--fgaccent);
 }
 
 article .byline {
@@ -152,6 +157,29 @@ article ul {
 
 article ul li {
 	margin-top: 1em;
+}
+
+/* Unfortunately my current markdown parser outputs <code> for both inline code and codeblocks. That's annoying. */
+article code[class^="language"] {
+	display: block;
+	color: var(--codeblockfg);
+	padding: 1em;
+	background-color: var(--codeblockbg);
+	max-width: 100%;
+	overflow-x: auto;
+	
+	tab-size: 4;
+	-moz-tab-size: 4;
+}
+
+article code:not([class^="language"]) {
+	background-color: var(--codeinlinebg);
+	color: var(--codeinlinefg);
+}
+
+/* Quick hack lmao */
+h1 code, h2 code, h3 code, h4 code {
+	padding: .5em;
 }
 
 @media (max-width: 56rem) {
