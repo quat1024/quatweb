@@ -650,9 +650,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "pulldown-cmark"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffade02495f22453cd593159ea2f59827aae7f53fa8323f756799b670881dcf8"
+dependencies = [
+ "bitflags",
+ "getopts",
+ "memchr",
+ "unicase",
+]
+
+[[package]]
 name = "quatweb"
 version = "0.1.0"
 dependencies = [
+ "pulldown-cmark 0.8.0",
  "ramhorns",
  "tokio",
  "warp",
@@ -684,7 +697,7 @@ dependencies = [
  "beef",
  "fnv",
  "logos",
- "pulldown-cmark",
+ "pulldown-cmark 0.7.2",
  "ramhorns-derive",
 ]
 

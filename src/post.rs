@@ -1,9 +1,19 @@
-use std::{collections::HashMap, error::Error, fmt::{self, Display, Formatter}, path::{Path, PathBuf}};
-use tokio::{fs::{File}, io::{AsyncBufReadExt, BufReader}};
-
+use std::{collections::HashMap, error::Error, fmt::{self, Display, Formatter}, ops::Deref, path::{Path, PathBuf}};
+use tokio::{fs::File, io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader, Lines}};
+use ramhorns::Content;
+#[derive(Content)]
 pub struct Post {
-	path: PathBuf,
+	#[ramhorns(skip)]
+	pub path: PathBuf,
+	#[ramhorns(flatten)]
+	pub meta: PostMetadata,
+	pub content: String
+}
+
+#[derive(Content)]
+pub struct PostMetadata {
 	pub slug: String,
+	#[ramhorns(rename = "post_title")]
 	pub title: String,
 	pub description: Option<String>,
 	pub created_date: String,
@@ -19,44 +29,15 @@ impl Post {
 		let path: &Path = path.as_ref();
 		
 		let reader = BufReader::new(File::open(path).await?);
-		
-		let mut slug: Option<String> = None;
-		let mut title: Option<String> = None;
-		let mut description: Option<String> = None;
-		let mut created_date: Option<String> = None;
-		let mut modified_date: Option<String> = None;
-		
 		let mut lines = reader.lines();
-		while let Some(line) = lines.next_line().await? {
-			if line.starts_with(FRONT_MATTER_DELIMITER) {
-				break;
-			}
-			
-			if line.trim().is_empty() || matches!(line.chars().next(), Some('#')) {
-				continue;
-			}
-			
-			let eq = line.find('=').ok_or(PostErr::FrontMatterSyntax)?;
-			let key = &line[..eq];
-			let value = &line[eq + 1..];
-			
-			match key {
-				"slug" => slug = Some(value.to_owned()),
-				"title" => title = Some(value.to_owned()),
-				"description" => description = Some(value.to_owned()),
-				"created_date" => created_date = Some(value.to_owned()),
-				"modified_date" => modified_date = Some(value.to_owned()),
-				_ => ()
-			}
-		}
 		
-		Ok(Post {
+		let meta = Self::parse_metadata(&mut lines).await?;
+		let content = Self::parse_content(lines).await?;
+		
+		Ok(Post{
 			path: path.to_owned(),
-			slug: slug.ok_or(PostErr::NoSlug)?,
-			title: title.ok_or(PostErr::NoTitle)?,
-			description,
-			created_date: created_date.ok_or(PostErr::NoDate)?,
-			modified_date
+			meta,
+			content
 		})
 	}
 	
@@ -67,31 +48,54 @@ impl Post {
 		while let Some(entry) = reader.next_entry().await? {
 			if entry.file_type().await?.is_file() {
 				let post = Post::from_file(entry.path()).await?;
-				map.insert(post.slug.clone(), post);
+				map.insert(post.meta.slug.clone(), post);
 			}
 		}
 		
 		Ok(map)
 	}
 	
-	pub async fn read_contents(&self) -> Result<String, PostErr> {
-		let reader = BufReader::new(File::open(&self.path).await?);
-		let mut lines = reader.lines();
+	async fn parse_metadata<T: AsyncBufRead + Unpin>(line_reader: &mut Lines<T>) -> Result<PostMetadata, PostErr> {
+		let mut kv: HashMap<String, String> = HashMap::new();
 		
-		//TODO this sucks lmao
-		while let Some(line) = lines.next_line().await? {
-			if line.trim().starts_with(FRONT_MATTER_DELIMITER) {
+		while let Some(line) = line_reader.next_line().await? {
+			if line.starts_with(FRONT_MATTER_DELIMITER) {
+				//consume it
 				break;
 			}
+			
+			if line.trim().is_empty() || matches!(line.chars().next(), Some('#')) {
+				continue;
+			}
+			
+			let eq = line.find('=').ok_or(PostErr::FrontMatterSyntax)?;
+			let key = &line[..eq];
+			let value = &line[eq + 1..];
+			kv.insert(key.to_owned(), value.to_owned());
 		}
 		
-		let mut contents = Vec::new();
+		Ok(PostMetadata {
+			slug: kv.remove("slug").ok_or(PostErr::NoSlug)?,
+			title: kv.remove("title").ok_or(PostErr::NoTitle)?,
+			description: kv.remove("description"),
+			created_date: kv.remove("created_date").ok_or(PostErr::NoDate)?,
+			modified_date: kv.remove("modified_date"),
+		})
+	}
+	
+	async fn parse_content<T: AsyncBufRead + Unpin>(line_reader: Lines<T>) -> Result<String, PostErr> {	
+		//collect the rest of the file
+		let mut contents = String::new();
+		line_reader.into_inner().read_to_string(&mut contents).await?;
 		
-		while let Some(line) = lines.next_line().await? {
-			contents.push(line);
-		}
+		//pipe it through a markdown parser (nb: ramhorns does have its own md parser, but it's internally pulldown-cmark and is not configurable)
+		use pulldown_cmark::Options as O;
+		let md = pulldown_cmark::Parser::new_ext(&contents, O::ENABLE_FOOTNOTES | O::ENABLE_STRIKETHROUGH | O::ENABLE_TABLES | O::ENABLE_TASKLISTS);
 		
-		return Ok(contents.join("\n"));
+		let mut html = String::new();
+		pulldown_cmark::html::push_html(&mut html, md);
+		
+		Ok(html)
 	}
 }
 

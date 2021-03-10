@@ -3,14 +3,21 @@
 mod post;
 
 use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::{Arc, RwLock}};
-use post::{Post, PostMap};
+use post::{Post, PostErr, PostMap};
 use ramhorns::{Ramhorns, Content};
-use tokio::{runtime::Runtime};
+use tokio::runtime::Runtime;
 use warp::{Filter, Rejection, Reply};
 
 struct App {
 	ramhorns: Ramhorns,
-	posts: PostMap
+	posts: PostMap,
+	context: Context
+}
+
+#[derive(Content)]
+struct Context {
+	hostname: String,
+	title: String
 }
 
 fn main() {
@@ -44,81 +51,90 @@ fn main() {
 	});
 }
 
-async fn init_app() -> Result<App, Box<dyn std::error::Error>> {
+async fn init_app() -> Result<App, InitError> {
 	Ok(App {
 		ramhorns: Ramhorns::from_folder("www/template")?,
-		posts: Post::all_in_dir("www/post").await?
+		posts: Post::all_in_dir("www/post").await?,
+		context: Context { //todo find a better spot to put this.
+			hostname: "localhost".into(),
+			title: "Highly Suspect Agency".into()
+		}
 	})
 }
 
+#[derive(Debug)]
+enum InitError {
+	Ramhorns(ramhorns::Error),
+	Post(PostErr)
+}
+
+impl From<ramhorns::Error> for InitError {
+    fn from(er: ramhorns::Error) -> Self {
+        InitError::Ramhorns(er)
+    }
+}
+
+impl From<PostErr> for InitError {
+    fn from(er: PostErr) -> Self {
+        InitError::Post(er)
+    }
+}
+
+impl warp::reject::Reject for InitError {}
+
 async fn handle_post(app: Arc<RwLock<Arc<App>>>, post_name: String) -> Result<impl Reply, Rejection> {
 	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("post.html").ok_or(PostRouteErr::RamhornsErr)?;
-	
-	let post = app.posts.get(&post_name).ok_or(PostRouteErr::NoPost(post_name))?;
-	let contents = post.read_contents().await.map_err(PostRouteErr::ContentReadErr)?;
+	let template = app.ramhorns.get("post.template.html").ok_or(PostRouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
-	struct FormattedPost<'a> {
-		slug: &'a str,
-		title: &'a str,
-		description: Option<&'a str>,
-		created_date: &'a str,
-		modified_date: Option<&'a str>,
-		#[md]
-		contents: String
+	struct TemplatingContext<'a> {
+		post: &'a Post,
+		context: &'a Context
 	}
-		
-	let formatted_post = FormattedPost {
-		slug: &post.slug,
-		title: &post.title,
-		description: post.description.as_ref().map(|s| s.as_ref()),
-		created_date: &post.created_date,
-		modified_date: post.modified_date.as_ref().map(|s| s.as_ref()),
-		contents
+	
+	let templating_context = TemplatingContext {
+		post: app.posts.get(&post_name).ok_or(PostRouteErr::NoPost(post_name))?,
+		context: &app.context
 	};
 	
-	let rendered = template.render(&formatted_post);
+	let rendered = template.render(&templating_context);
+	Ok(warp::reply::html(rendered))
+}
+
+async fn handle_post_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
+	let app = app.read().unwrap().clone();
+	let template = app.ramhorns.get("post_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
 	
+	//Is this possible to do without copying?
+	
+	#[derive(Content)]
+	struct TemplatingContext<'a> {
+		posts: &'a Vec<&'a Post>,
+		context: &'a Context
+	}
+	
+	let templating_context = TemplatingContext {
+		posts: &app.posts.values().collect::<Vec<_>>(),
+		context: &app.context
+	};
+	
+	let rendered = template.render(&templating_context);
 	Ok(warp::reply::html(rendered))
 }
 
 #[derive(Debug)]
 enum PostRouteErr {
 	NoPost(String),
-	ContentReadErr(post::PostErr),
-	RamhornsErr
+	NoTemplate
 }
 
 impl warp::reject::Reject for PostRouteErr {}
 
-async fn handle_post_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	
-	//todo use a template for this
-	let mut resp = String::new();
-	app.posts.values().for_each(|post| {
-		resp.push_str("post slug: ");
-		resp.push_str(&post.slug);
-		resp.push_str(" - title: ");
-		resp.push_str(&post.title);
-		resp.push_str("<br/>");
-	});
-	
-	Ok(warp::reply::html(resp))
-}
-
 async fn handle_reload(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let new_app = {
-		let x = init_app().await;
-		if x.is_err() {
-			return Ok(format!("did not refresh app: {}", x.err().unwrap()));
-		}
-		x.unwrap()
-	};
+	let new_app = init_app().await?;
 	
 	let mut a = app.write().unwrap();
 	*a = Arc::new(new_app);
 	
-	Ok("reloaded".into())
+	Ok(warp::reply::html("reloaded"))
 }
