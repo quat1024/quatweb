@@ -82,3 +82,17 @@
 		transform: scaleY(100%);
 	}
 }
+
+@media (prefers-reduced-motion) {
+	.logo .cover1, .logo .cover2, .logo .iris {
+		animation-duration: 0s !important;
+	}
+	
+	.logo .cover1 {
+		transform: rotate(-40deg);
+	}
+	
+	.logo .cover2 {
+		transform: rotate(35deg);
+	}
+}

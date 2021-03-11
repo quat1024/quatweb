@@ -95,7 +95,7 @@ header .spacefiller {
 	flex-grow: 1;
 }
 
-header .links {
+header nav {
 	margin-right: .5rem;
 }
 
