@@ -1,11 +1,9 @@
-#[allow(unused_imports)]
-
 mod post;
 mod time;
 
 use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::{Arc, RwLock}};
-use post::{Post, PostErr, PostCollection};
-use ramhorns::{Ramhorns, Content};
+use post::{Post, PostCollection, PostErr, Tag};
+use ramhorns::{Content, Ramhorns};
 use tokio::runtime::Runtime;
 use warp::{Filter, Rejection, Reply};
 
@@ -37,17 +35,42 @@ fn main() {
 			warp::any().map(move || app.clone())
 		}
 		
-		let landing_route    = warp::path::end()           .and(with_app(app.clone())).and_then(handle_landing);
-		let discord_route    = warp::path!("discord")      .and(with_app(app.clone())).and_then(handle_discord);
-		let post_index_route = warp::path!("post")         .and(with_app(app.clone())).and_then(handle_post_index);
-		let post_route       = warp::path!("post" / String).and(with_app(app.clone())).and_then(handle_post);
-		let reload_route     = warp::path!("reload")       .and(with_app(app.clone())).and_then(handle_reload);
+		let landing_route = warp::path::end()
+			.and(with_app(app.clone()))
+			.and_then(handle_landing);
+			
+		let discord_route = warp::path!("discord")
+			.and(with_app(app.clone()))
+			.and_then(handle_discord);
+			
+		let post_index_route = warp::path!("posts")
+			.and(with_app(app.clone()))
+			.and_then(handle_post_index);
+		
+		let post_route = warp::path!("posts" / String)
+			.and(with_app(app.clone()))
+			.and_then(handle_post);
+		
+		let tag_index_route = warp::path!("tags")
+			.and(with_app(app.clone()))
+			.and_then(handle_tag_index);
+		
+		let tag_route = warp::path!("tags" / String)
+			.and(with_app(app.clone()))
+			.and_then(handle_tag);
+		
+		//todo guard this behind a cookie or something LOL
+		let reload_route = warp::path!("reload")
+			.and(with_app(app.clone()))
+			.and_then(handle_reload);
 		
 		let routes = warp::get().and(static_pages
 			.or(landing_route)
 			.or(discord_route)
 			.or(post_index_route)
 			.or(post_route)
+			.or(tag_index_route)
+			.or(tag_route)
 			.or(reload_route)
 		);
 	
@@ -134,7 +157,7 @@ async fn handle_post(post_name: String, app: Arc<RwLock<Arc<App>>>) -> Result<im
 	}
 	
 	let templating_context = TemplatingContext {
-		post: app.posts.get_slug(&post_name).ok_or(PostRouteErr::NoPost(post_name))?,
+		post: app.posts.get_by_slug(&post_name).ok_or(PostRouteErr::NoPost(post_name))?,
 		context: &app.context
 	};
 	
@@ -149,11 +172,71 @@ async fn handle_post_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rej
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
 		posts: &'a Vec<Post>,
+		count: usize,
+		many: bool,
 		context: &'a Context
 	}
 	
+	let count = app.posts.all_posts.len();
+	
 	let templating_context = TemplatingContext {
 		posts: &app.posts.all_posts,
+		count,
+		many: count > 1,
+		context: &app.context
+	};
+	
+	let rendered = template.render(&templating_context);
+	Ok(warp::reply::html(rendered))
+}
+
+async fn handle_tag(tag: String, app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
+	let app = app.read().unwrap().clone();
+	let template = app.ramhorns.get("tag.template.html").ok_or(PostRouteErr::NoTemplate)?;
+	
+	#[derive(Content)]
+	struct TemplatingContext<'a> {
+		posts: &'a Vec<&'a Post>,
+		count: usize,
+		many: bool,
+		tag: &'a String,
+		context: &'a Context
+	}
+	
+	let tagged_posts = app.posts.get_by_tag(&tag);
+	
+	let templating_context = TemplatingContext {
+		posts: &tagged_posts,
+		count: tagged_posts.len(),
+		many: tagged_posts.len() > 1,
+		tag: &tag,
+		context: &app.context
+	};
+	
+	let rendered = template.render(&templating_context);
+	Ok(warp::reply::html(rendered))
+}
+
+async fn handle_tag_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
+	let app = app.read().unwrap().clone();
+	let template = app.ramhorns.get("tag_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
+	
+	#[derive(Content)]
+	struct TemplatingContext<'a> {
+		tags: Vec<&'a Tag>,
+		count: usize,
+		many: bool,
+		context: &'a Context
+	}
+	
+	let mut tags = app.posts.posts_by_tag.keys().collect::<Vec<_>>();
+	tags.sort();
+	let count = tags.len();
+	
+	let templating_context = TemplatingContext {
+		tags,
+		count,
+		many: count > 1,
 		context: &app.context
 	};
 	

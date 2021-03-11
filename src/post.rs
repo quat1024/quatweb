@@ -1,4 +1,4 @@
-use std::{collections::HashMap, convert::TryInto, error::Error, fmt::{self, Display, Formatter}, ops::Deref, path::{Path, PathBuf}};
+use std::{collections::HashMap, error::Error, fmt::{self, Display, Formatter}, path::{Path, PathBuf}};
 use tokio::{fs::File, io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader, Lines}};
 use ramhorns::Content;
 
@@ -29,8 +29,14 @@ pub struct PostMetadata {
 //For example if "tags" is a Vec<String> with "a", "b", "c", I can wrap something in {{#tags}}M{{/tags}} to get MMM.
 //But I don't know how to actually render "abc".
 //At least with this funny tuple struct I can use {{#tags}}{{0}}{{/tags}}.
-#[derive(Content, Clone, PartialEq, Eq, Hash, Default, Debug)]
+#[derive(Content, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Default, Debug)]
 pub struct Tag(String);
+
+impl From<&String> for Tag {
+    fn from(s: &String) -> Self {
+        Tag(s.clone())
+    }
+}
 
 static FRONT_MATTER_DELIMITER: &str = "---";
 
@@ -150,8 +156,21 @@ impl PostCollection {
 		})
 	}
 	
-	pub fn get_slug(&self, slug: &str) -> Option<&Post> {
+	pub fn get_by_slug(&self, slug: &str) -> Option<&Post> {
 		self.posts_by_slug.get(slug).map(|&index| &self.all_posts[index])
+	}
+	
+	pub fn get_by_tag(&self, tag: impl Into<Tag>) -> Vec<&Post> {
+		match self.posts_by_tag.get(&tag.into()) {
+			None => Vec::new(),
+			Some(poasts) => {
+				let mut result = Vec::new();
+				for &i in poasts {
+					result.push(&self.all_posts[i]);
+				}
+				result
+			}
+		}
 	}
 }
 

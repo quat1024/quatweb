@@ -1,7 +1,6 @@
 {{>shell_begin.template.html}}
-<h1>Post Index</h1>
-<p>{{#many}}All {{count}} posts!{{/many}}{{^many}}The post!{{/many}}</p>
-<p>See also: the <a href="/tags">tag index</a>.</p>
+<h1>Posts under {{tag}}</h1>
+<p>{{#many}}All {{count}} posts tagged with {{tag}}:{{/many}}{{^many}}The post tagged with {{tag}}:{{/many}}</p>
 {{#posts}}
 <ul>
 	<li>{{created_date}} - <a href="/posts/{{slug}}">{{post_title}}</a><br/>
