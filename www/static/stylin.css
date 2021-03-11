@@ -181,6 +181,39 @@ h1 code, h2 code, h3 code, h4 code {
 	padding: .5em;
 }
 
+hr {
+	border: none;
+	border-top: 1px solid var(--fgcolor);
+	overflow: visible;
+	text-align: center;
+	width: 70%;
+	height: 0;
+	margin: 3em auto;
+}
+
+hr:after {
+	content: "";
+	display: inline-block;
+	
+	width: 48px;
+	height: 24px;
+	position: relative;
+	top: -12px;
+	
+	background-color: var(--bgcolor);
+	background-image: url("/img/tiny_dragnmlem.png");
+	background-position: center;
+	background-repeat: no-repeat;
+}
+
+hr.cool:after {
+	background-image: url("/img/tiny_dragncool.png");
+}
+
+hr.think:after {
+	background-image: url("/img/tiny_dragnthink.png");
+}
+
 @media (max-width: 40rem) {
 	body {
 		font-size: 1em;

@@ -7,8 +7,10 @@ tags=fabric,1.14,mc-modding
 ---
 This article was formerly published on my Github account [here](https://gist.github.com/quat1024/2645637708b9577a57671df0eab953e2/), although I never finished it. I've reprinted it on my new website as it originally appeared.
 
-TL;DR
-=====
+<hr class="think"/>
+
+### TL;DR
+
 If you want to load some resources or data in Fabric 1.14 or 1.15, do this:
 
 ```java
