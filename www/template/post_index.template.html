@@ -3,7 +3,9 @@
 <p>All the posts!</p>
 {{#posts}}
 <ul>
-	<li><a href="/post/{{slug}}">{{post_title}}</a> - {{description}}</li>
+	<li>{{created_date}} - <a href="/post/{{slug}}">{{post_title}}</a><br/>
+		{{description}}
+	</li>
 </ul>
 {{/posts}}
 {{>shell_end.template.html}}

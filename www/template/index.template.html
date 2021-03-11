@@ -10,7 +10,7 @@
 	<h2>Recent Posts</h2>
 	{{#posts}}
 	<ul>
-		<li><a href="/post/{{slug}}">{{post_title}}</a> - {{description}}</li>
+		<li>{{created_date}} - <a href="/post/{{slug}}">{{post_title}}</a></li>
 	</ul>
 	{{/posts}}
 	{{! I didn't actually mean for the link to appear mega-wide, but I actually kinda like it }}

@@ -3,6 +3,7 @@ title=Fix stuff being broke in IntelliJ
 author=quat
 description=On fixing old ForgeGradles with new IntelliJs.
 created_date=Jan 19, 2020
+tags=forge,1.12,mc-modding
 ---
 This article was formerly published on my Github account [here](https://gist.github.com/quat1024/8bf436c85e5c140d27d49a7dc6c09982/). It was during a time when ForgeGradle didn't work well with 1.12 mods. Since most users don't mod 1.12 anymore, it's mostly historical information, but I'll leave it up in case someone finds a use for it.
 

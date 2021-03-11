@@ -1,16 +1,17 @@
 #[allow(unused_imports)]
 
 mod post;
+mod time;
 
 use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::{Arc, RwLock}};
-use post::{Post, PostErr, PostMap};
+use post::{Post, PostErr, PostCollection};
 use ramhorns::{Ramhorns, Content};
 use tokio::runtime::Runtime;
 use warp::{Filter, Rejection, Reply};
 
 struct App {
 	ramhorns: Ramhorns,
-	posts: PostMap,
+	posts: PostCollection,
 	context: Context
 }
 
@@ -58,7 +59,7 @@ fn main() {
 async fn init_app() -> Result<App, InitError> {
 	Ok(App {
 		ramhorns: Ramhorns::from_folder("www/template")?,
-		posts: Post::all_in_dir("www/post").await?,
+		posts: PostCollection::from_folder("www/post").await?,
 		context: Context { //todo find a better spot to put this.
 			hostname: "localhost".into(),
 			title: "Highly Suspect Agency".into()
@@ -97,7 +98,7 @@ async fn handle_landing(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Reject
 	}
 	
 	let templating_context = TemplatingContext {
-		posts: &app.posts.values().take(5).collect::<Vec<_>>(),
+		posts: &app.posts.all_posts.iter().take(5).collect::<Vec<_>>(),
 		context: &app.context
 	};
 	
@@ -133,7 +134,7 @@ async fn handle_post(post_name: String, app: Arc<RwLock<Arc<App>>>) -> Result<im
 	}
 	
 	let templating_context = TemplatingContext {
-		post: app.posts.get(&post_name).ok_or(PostRouteErr::NoPost(post_name))?,
+		post: app.posts.get_slug(&post_name).ok_or(PostRouteErr::NoPost(post_name))?,
 		context: &app.context
 	};
 	
@@ -145,17 +146,14 @@ async fn handle_post_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rej
 	let app = app.read().unwrap().clone();
 	let template = app.ramhorns.get("post_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
 	
-	//Is this possible to do without copying?
-	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
-		posts: &'a Vec<&'a Post>,
+		posts: &'a Vec<Post>,
 		context: &'a Context
 	}
 	
-	//TODO: It's unsorted!
 	let templating_context = TemplatingContext {
-		posts: &app.posts.values().collect::<Vec<_>>(),
+		posts: &app.posts.all_posts,
 		context: &app.context
 	};
 	
