@@ -1,6 +1,6 @@
 {{>shell_begin.template.html}}
 <h1>Posts under {{tag}}</h1>
-<p>{{#many}}All {{count}} posts tagged with {{tag}}:{{/many}}{{^many}}The post tagged with {{tag}}:{{/many}}</p>
+<p>{{#many}}All {{count}} posts <a href="/tags">tagged</a> with {{tag}}:{{/many}}{{^many}}The post <a href="/tags">tagged</a> with {{tag}}:{{/many}}</p>
 {{#posts}}
 <ul>
 	<li>{{created_date}} - <a href="/posts/{{slug}}">{{post_title}}</a><br/>
