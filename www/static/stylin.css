@@ -87,7 +87,7 @@ header h1 {
 	margin: 0;
 
 	text-transform: uppercase;
-	font-size: min(4em, 5.5vw);
+	font-size: min(4em, 5.7vw);
 	line-height: 100%;
 }
 
@@ -179,12 +179,6 @@ article code:not([class^="language"]) {
 /* Quick hack lmao */
 h1 code, h2 code, h3 code, h4 code {
 	padding: .5em;
-}
-
-@media (max-width: 56rem) {
-	header h1 {
-		max-width: 10em; /* forces a line break after "SUSPECT" */
-	}
 }
 
 @media (max-width: 40rem) {
