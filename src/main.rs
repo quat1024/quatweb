@@ -16,6 +16,7 @@ pub struct App {
 #[derive(Content)]
 pub struct Settings {
 	pub hostname: String,
+	pub tls: bool,
 	#[ramhorns(skip)]
 	pub addr: SocketAddr,
 	pub title: String,
@@ -30,6 +31,7 @@ fn main() {
 	let settings = Settings {
 		hostname: "jiji.srv.highlysuspect.agency:12345".into(),
 		addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 80),
+		tls: false,
 		title: "Highly Suspect Agency".into()
 	};
 	
@@ -50,10 +52,19 @@ fn main() {
 		rt.spawn(control(app.clone(), tx, stdin_thread()));
 		
 		//setup server
-		let (_, server) = warp::serve(routes::create_routes(app.clone())).bind_with_graceful_shutdown(app.settings.addr, async { rx.await.ok().unwrap() });
-		
-		//and let's go!
-		server.await;
+		if app.settings.tls {
+			let(_, server) = warp::serve(routes::create_routes(app.clone()))
+				.tls()
+				.cert_path("www/keys/cert.pem")
+				.key_path("www/keys/key.rsa")
+				.bind_with_graceful_shutdown(app.settings.addr, async { rx.await.ok().unwrap() });
+			
+			server.await;
+		} else {
+			let(_, server) = warp::serve(routes::create_routes(app.clone())).bind_with_graceful_shutdown(app.settings.addr, async { rx.await.ok().unwrap() });
+			
+			server.await;
+		}
 	});
 }
 

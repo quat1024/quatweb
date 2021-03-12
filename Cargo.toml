@@ -8,6 +8,6 @@ edition = "2018"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
-warp = "0.3"
+warp = { version = "0.3", features = ["tls"] }
 ramhorns = "0.10.2"
 pulldown-cmark= "0.8.0"
