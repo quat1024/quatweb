@@ -15,3 +15,4 @@ serde = { version = "1.0", features = ["derive"] }
 serde_with = "1.6.4"
 envy = "0.4"
 chrono = "0.4.19"
+thiserror = "1.0"

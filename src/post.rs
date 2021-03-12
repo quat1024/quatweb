@@ -1,7 +1,8 @@
-use std::{collections::HashMap, error::Error, fmt::{self, Display, Formatter}, path::{Path, PathBuf}};
+use std::{collections::HashMap, path::{Path, PathBuf}};
 use tokio::{fs::File, io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader, Lines}};
 use ramhorns::Content;
 use crate::ext::*;
+use crate::*;
 
 #[derive(Content)]
 pub struct Post {
@@ -160,44 +161,22 @@ impl PostCollection {
 	}
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 pub enum PostErr {
-	Io(std::io::Error),
+	#[error("IO error")]
+	Io(#[from] std::io::Error),
+	#[error("No post slug provided")]
 	NoSlug,
+	#[error("No post author provided")]
 	NoAuthor,
+	#[error("No title provided")]
 	NoTitle,
+	#[error("No creation date provided")]
 	NoDate,
-	DateParse(chrono::ParseError),
+	#[error("Error parsing date")]
+	DateParse(#[from] chrono::ParseError),
+	#[error("Two posts with the same slug: {0}")]
 	DuplicateSlug(String),
+	#[error("Error parsing front-matter")]
 	FrontMatterSyntax
-}
-
-impl From<std::io::Error> for PostErr {
-    fn from(er: std::io::Error) -> Self {
-        PostErr::Io(er)
-    }
-}
-
-impl Display for PostErr {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        match self {
-			PostErr::Io(e) => write!(f, "io error: {}", e),
-			PostErr::NoSlug => write!(f, "no post slug specified"),
-			PostErr::NoAuthor => write!(f, "no post author specified"),
-		    PostErr::NoTitle => write!(f, "no post title specified"),
-            PostErr::NoDate => write!(f, "no creation date specified"),
-            PostErr::DateParse(e) => write!(f, "date parse error: {}", e),
-			PostErr::DuplicateSlug(slug) => write!(f, "more than one post has the slug {}", slug),
-            PostErr::FrontMatterSyntax => write!(f, "syntax error parsing the front-matter"),
-        }
-    }
-}
-
-impl Error for PostErr {
-    fn source(&self) -> Option<&(dyn Error + 'static)> {
-        match self {
-			PostErr::Io(e) => Some(e),
-			_ => None
-		}
-    }
 }

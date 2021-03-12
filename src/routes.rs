@@ -235,11 +235,14 @@ async fn handle_tag_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
 	Ok(warp::reply::html(rendered))
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 #[allow(clippy::enum_variant_names)]
 enum RouteErr {
+	#[error("Could not load a template")]
 	NoTemplate,
+	#[error("No post with slug {0}")]
 	NoPost(String),
+	#[error("No tag {0}")]
 	NoTag(String)
 }
 

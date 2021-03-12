@@ -11,6 +11,7 @@ use settings::Settings;
 use tokio::{runtime::Runtime, sync::{mpsc::{self, UnboundedReceiver}, oneshot}};
 use warp::{Filter, Rejection, Reply};
 use serde::Deserialize;
+use thiserror::Error;
 
 pub struct App {
 	pub settings: Settings,
@@ -105,31 +106,12 @@ async fn init_content() -> Result<DynamicContent, InitContentErr> {
 	})
 }
 
-#[derive(Debug)]
+#[derive(Debug, Error)]
 enum InitContentErr {
-	Ramhorns(ramhorns::Error),
-	Post(PostErr)
-}
-
-impl From<ramhorns::Error> for InitContentErr {
-    fn from(er: ramhorns::Error) -> Self {
-        InitContentErr::Ramhorns(er)
-    }
-}
-
-impl From<PostErr> for InitContentErr {
-    fn from(er: PostErr) -> Self {
-        InitContentErr::Post(er)
-    }
-}
-
-impl std::fmt::Display for InitContentErr {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-			InitContentErr::Ramhorns(e) => write!(f, "ramhorns error: {}", e),
-			InitContentErr::Post(e) => write!(f, "post error: {}", e)
-		}
-    }
+	#[error("Error loading templates")]
+	Ramhorns(#[from] ramhorns::Error),
+	#[error("Error parsing posts")]
+	Post(#[from] PostErr)
 }
 
 impl warp::reject::Reject for InitContentErr {}
