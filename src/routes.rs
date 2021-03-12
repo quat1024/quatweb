@@ -1,4 +1,4 @@
-use warp::filters::BoxedFilter;
+use warp::{filters::BoxedFilter, hyper::StatusCode, reply};
 
 use crate::*;
 
@@ -9,6 +9,8 @@ pub fn create_routes<'a>(app: Arc<App>) -> BoxedFilter<(impl Reply + 'a,)> {
 	fn with_app(app: Arc<App>) -> impl Filter<Extract = (Arc<App>,), Error = Infallible> + Clone {
 		warp::any().map(move || app.clone())
 	}
+	
+	//TODO: none of these routes actually *need* the async keyword on them, they never await
 	
 	let landing_route = warp::path::end()
 		.and(with_app(app.clone()))
@@ -31,7 +33,7 @@ pub fn create_routes<'a>(app: Arc<App>) -> BoxedFilter<(impl Reply + 'a,)> {
 		.and_then(handle_tag_index);
 	
 	let tag_route = warp::path!("tags" / String)
-		.and(with_app(app))
+		.and(with_app(app.clone()))
 		.and_then(handle_tag);
 	
 	warp::get().and(static_pages
@@ -41,12 +43,61 @@ pub fn create_routes<'a>(app: Arc<App>) -> BoxedFilter<(impl Reply + 'a,)> {
 		.or(post_route)
 		.or(tag_index_route)
 		.or(tag_route)
-	).boxed()
+	).recover(move |rej| recover(rej, app.clone())).boxed()
+}
+
+async fn recover(rej: Rejection, app: Arc<App>) -> Result<impl Reply, Infallible> {
+	let content: &DynamicContent = &app.content.read().unwrap();
+	let template = content.ramhorns.get("error.template.html");
+	if template.is_none() {
+		//Not much else to do
+		let message = format!("Encountered an error, but couldn't load the fancy error page. {:?}", rej);
+		let html = reply::html(message);
+		return Ok(reply::with_status(html, StatusCode::INTERNAL_SERVER_ERROR));
+	}
+	let template = template.unwrap();
+	
+	let code: StatusCode;
+	let message: String;
+	
+	if rej.is_not_found() {
+		code = StatusCode::NOT_FOUND;
+		message = "Not Found.".into();
+	} else if let Some(RouteErr::NoTemplate) = rej.find() {
+		code = StatusCode::INTERNAL_SERVER_ERROR;
+		message = "Missing template.".into();
+	} else if let Some(RouteErr::NoPost(post)) = rej.find() {
+		code = StatusCode::NOT_FOUND;
+		message = format!("No post at {}.", post);
+	} else if let Some(RouteErr::NoTag(tag)) = rej.find() {
+		code = StatusCode::NOT_FOUND;
+		message = format!("No tag named {}.", tag);
+	} else {
+		code = StatusCode::INTERNAL_SERVER_ERROR;
+		message = format!("Unhandled: {:?}", rej);
+	}
+	
+	#[derive(Content)]
+	struct TemplatingContext<'a> {
+		errno: u16,
+		message: String,
+		include_error_css: bool,
+		settings: &'a Settings
+	}
+	
+	let rendered = template.render(&TemplatingContext {
+		errno: code.into(),
+		message,
+		include_error_css: true,
+		settings: &app.settings
+	});
+	
+	Ok(reply::with_status(reply::html(rendered), code))
 }
 
 async fn handle_landing(app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("index.template.html").ok_or(PostRouteErr::NoTemplate)?;
+	let template = content.ramhorns.get("index.template.html").ok_or(RouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -65,7 +116,7 @@ async fn handle_landing(app: Arc<App>) -> Result<impl Reply, Rejection> {
 
 async fn handle_discord(app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("discord.template.html").ok_or(PostRouteErr::NoTemplate)?;
+	let template = content.ramhorns.get("discord.template.html").ok_or(RouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -82,7 +133,7 @@ async fn handle_discord(app: Arc<App>) -> Result<impl Reply, Rejection> {
 
 async fn handle_post(post_name: String, app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("post.template.html").ok_or(PostRouteErr::NoTemplate)?;
+	let template = content.ramhorns.get("post.template.html").ok_or(RouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -91,7 +142,7 @@ async fn handle_post(post_name: String, app: Arc<App>) -> Result<impl Reply, Rej
 	}
 	
 	let templating_context = TemplatingContext {
-		post: content.posts.get_by_slug(&post_name).ok_or(PostRouteErr::NoPost(post_name))?,
+		post: content.posts.get_by_slug(&post_name).ok_or(RouteErr::NoPost(post_name))?,
 		settings: &app.settings
 	};
 	
@@ -101,7 +152,7 @@ async fn handle_post(post_name: String, app: Arc<App>) -> Result<impl Reply, Rej
 
 async fn handle_post_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("post_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
+	let template = content.ramhorns.get("post_index.template.html").ok_or(RouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -127,7 +178,7 @@ async fn handle_post_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
 
 async fn handle_tag(tag: String, app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("tag.template.html").ok_or(PostRouteErr::NoTemplate)?;
+	let template = content.ramhorns.get("tag.template.html").ok_or(RouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -139,11 +190,16 @@ async fn handle_tag(tag: String, app: Arc<App>) -> Result<impl Reply, Rejection>
 	}
 	
 	let tagged_posts = content.posts.get_by_tag(&tag);
+	let count = tagged_posts.len();
+	
+	if count == 0 {
+		return Err(RouteErr::NoTag(tag).into());
+	}
 	
 	let templating_context = TemplatingContext {
 		posts: &tagged_posts,
-		count: tagged_posts.len(),
-		many: tagged_posts.len() > 1,
+		count,
+		many: count > 1,
 		tag: &tag,
 		settings: &app.settings
 	};
@@ -154,7 +210,7 @@ async fn handle_tag(tag: String, app: Arc<App>) -> Result<impl Reply, Rejection>
 
 async fn handle_tag_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("tag_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
+	let template = content.ramhorns.get("tag_index.template.html").ok_or(RouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -180,9 +236,11 @@ async fn handle_tag_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
 }
 
 #[derive(Debug)]
-enum PostRouteErr {
+#[allow(clippy::enum_variant_names)]
+enum RouteErr {
+	NoTemplate,
 	NoPost(String),
-	NoTemplate
+	NoTag(String)
 }
 
-impl warp::reject::Reject for PostRouteErr {}
+impl warp::reject::Reject for RouteErr {}
