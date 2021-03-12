@@ -1,10 +1,11 @@
 mod post;
-mod time;
 mod routes;
 mod settings;
+mod ext;
 
 use std::{convert::Infallible, net::SocketAddr, sync::{Arc, RwLock}, thread};
-use post::{Post, PostCollection, PostErr, Tag};
+use post::{Post, PostCollection, PostErr};
+use ext::Tag;
 use ramhorns::{Content, Ramhorns};
 use settings::Settings;
 use tokio::{runtime::Runtime, sync::{mpsc::{self, UnboundedReceiver}, oneshot}};

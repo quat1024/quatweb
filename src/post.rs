@@ -1,8 +1,7 @@
 use std::{collections::HashMap, error::Error, fmt::{self, Display, Formatter}, path::{Path, PathBuf}};
 use tokio::{fs::File, io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, BufReader, Lines}};
 use ramhorns::Content;
-
-use crate::time::{self, Date};
+use crate::ext::*;
 
 #[derive(Content)]
 pub struct Post {
@@ -20,22 +19,9 @@ pub struct PostMetadata {
 	#[ramhorns(rename = "post_title")]
 	pub title: String,
 	pub description: Option<String>,
-	pub created_date: Date,
-	pub modified_date: Option<Date>,
+	pub created_date: MyNaiveDate,
+	pub modified_date: Option<MyNaiveDate>,
 	pub tags: Vec<Tag>
-}
-
-//TODO: I can't figure out how to get Ramhorns to render the *item* inside a vec
-//For example if "tags" is a Vec<String> with "a", "b", "c", I can wrap something in {{#tags}}M{{/tags}} to get MMM.
-//But I don't know how to actually render "abc".
-//At least with this funny tuple struct I can use {{#tags}}{{0}}{{/tags}}.
-#[derive(Content, Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Default, Debug)]
-pub struct Tag(String);
-
-impl From<&String> for Tag {
-    fn from(s: &String) -> Self {
-        Tag(s.clone())
-    }
 }
 
 static FRONT_MATTER_DELIMITER: &str = "---";
@@ -72,13 +58,13 @@ impl Post {
 			
 			let eq = line.find('=').ok_or(PostErr::FrontMatterSyntax)?;
 			let key = &line[..eq];
-			let value = &line[eq + 1..];
-			kv.insert(key.to_owned(), value.to_owned());
+			let value = &line[eq + 1..].trim();
+			kv.insert(key.to_owned(), value.to_string());
 		}
 		
 		//kinda a sticky situation that i couldn't find my way out of with the ? operator
 		//basically None is fine and Some(Ok) is fine but Some(Err) is not fine
-		let modified_date: Option<Result<Date, _>> = kv.remove("modified_date").map(|x| x.parse());
+		let modified_date: Option<Result<MyNaiveDate, _>> = kv.remove("modified_date").map(|x| x.parse());
 		if let Some(Err(e)) = modified_date {
 			return Err(PostErr::DateParse(e));
 		}
@@ -181,7 +167,7 @@ pub enum PostErr {
 	NoAuthor,
 	NoTitle,
 	NoDate,
-	DateParse(time::DateErr),
+	DateParse(chrono::ParseError),
 	DuplicateSlug(String),
 	FrontMatterSyntax
 }
@@ -200,7 +186,7 @@ impl Display for PostErr {
 			PostErr::NoAuthor => write!(f, "no post author specified"),
 		    PostErr::NoTitle => write!(f, "no post title specified"),
             PostErr::NoDate => write!(f, "no creation date specified"),
-            PostErr::DateParse(_e) => write!(f, "date parse error, im too lazy to impl display so figure it out yourself!!"),
+            PostErr::DateParse(e) => write!(f, "date parse error: {}", e),
 			PostErr::DuplicateSlug(slug) => write!(f, "more than one post has the slug {}", slug),
             PostErr::FrontMatterSyntax => write!(f, "syntax error parsing the front-matter"),
         }
