@@ -1,85 +1,85 @@
 mod post;
 mod time;
+mod routes;
 
-use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::{Arc, RwLock}};
+use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::{Arc, RwLock}, thread};
 use post::{Post, PostCollection, PostErr, Tag};
 use ramhorns::{Content, Ramhorns};
-use tokio::runtime::Runtime;
+use tokio::{runtime::Runtime, sync::{mpsc::{self, UnboundedReceiver}, oneshot}};
 use warp::{Filter, Rejection, Reply};
 
-struct App {
-	ramhorns: Ramhorns,
-	posts: PostCollection,
-	context: Context
+pub struct App {
+	pub ramhorns: Ramhorns,
+	pub posts: PostCollection,
+	pub context: Context
 }
 
 #[derive(Content)]
-struct Context {
-	hostname: String,
-	title: String
+pub struct Context {
+	pub hostname: String,
+	pub title: String
 }
 
 fn main() {
 	//server setup
-	let rt = Runtime::new().unwrap();
+	let rt = Arc::new(Runtime::new().unwrap());
 	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 80);
 	
 	rt.block_on(async {
 		//first time app startup
 		let app = Arc::new(RwLock::new(Arc::new(init_app().await.expect("failed to initialize app"))));
 		
-		//routes
-		let static_pages = warp::fs::dir("www/static");
+		//shutdown trigger
+		let (tx, rx) = oneshot::channel::<()>();
 		
-		fn with_app(app: Arc<RwLock<Arc<App>>>) -> impl Filter<Extract = (Arc<RwLock<Arc<App>>>,), Error = Infallible> + Clone {
-			warp::any().map(move || app.clone())
-		}
+		//setup control console
+		rt.spawn(control(app.clone(), tx, stdin_thread()));
 		
-		let landing_route = warp::path::end()
-			.and(with_app(app.clone()))
-			.and_then(handle_landing);
-			
-		let discord_route = warp::path!("discord")
-			.and(with_app(app.clone()))
-			.and_then(handle_discord);
-			
-		let post_index_route = warp::path!("posts")
-			.and(with_app(app.clone()))
-			.and_then(handle_post_index);
+		//setup server
+		let (_, server) = warp::serve(routes::create_routes(app)).bind_with_graceful_shutdown(addr, async { rx.await.ok().unwrap() });
 		
-		let post_route = warp::path!("posts" / String)
-			.and(with_app(app.clone()))
-			.and_then(handle_post);
-		
-		let tag_index_route = warp::path!("tags")
-			.and(with_app(app.clone()))
-			.and_then(handle_tag_index);
-		
-		let tag_route = warp::path!("tags" / String)
-			.and(with_app(app.clone()))
-			.and_then(handle_tag);
-		
-		//todo guard this behind a cookie or something LOL
-		let reload_route = warp::path!("reload")
-			.and(with_app(app.clone()))
-			.and_then(handle_reload);
-		
-		let routes = warp::get().and(static_pages
-			.or(landing_route)
-			.or(discord_route)
-			.or(post_index_route)
-			.or(post_route)
-			.or(tag_index_route)
-			.or(tag_route)
-			.or(reload_route)
-		);
-	
-		//letsa go!
-		warp::serve(routes).bind(addr).await;
+		//and let's go!
+		server.await;
 	});
 }
 
-async fn init_app() -> Result<App, InitError> {
+/// Spawns a thread (an OS thread, not a future) that reads lines from stdin and passes them to the returned Receiver.
+fn stdin_thread() -> UnboundedReceiver<String> {
+	let (tx, rx) = mpsc::unbounded_channel();
+	thread::Builder::new().name("Standard input reading thread".into()).spawn(move || loop {
+		let mut buf = String::new();
+		std::io::stdin().read_line(&mut buf).unwrap();
+		tx.send(buf).expect("couldn't send stdin line");
+	}).expect("Failed to spawn standard input thread");
+	rx
+}
+
+/// Parses control commands from the stdin thread.
+async fn control(app: Arc<RwLock<Arc<App>>>, shutdown_tx: oneshot::Sender<()>, mut stdin: UnboundedReceiver<String>) {
+	while let Some(line) = stdin.recv().await {
+		match line.trim().as_ref() {
+			"reload" => {
+				match init_app().await {
+					Ok(new_app) => {
+						*app.write().unwrap() = Arc::new(new_app);
+						println!("Reloaded app");
+					},
+					Err(e) => {
+						eprintln!("error reloading app: {}", e);
+					}
+				}
+			},
+			"quit" => {
+				eprintln!("Manually triggered shutdown");
+				shutdown_tx.send(()).unwrap();
+				return;
+			}
+			other => eprintln!("unknown command: {}", other)
+		}
+	}
+}
+
+async fn init_app() -> Result<App, InitErr> {
 	Ok(App {
 		ramhorns: Ramhorns::from_folder("www/template")?,
 		posts: PostCollection::from_folder("www/post").await?,
@@ -91,172 +91,30 @@ async fn init_app() -> Result<App, InitError> {
 }
 
 #[derive(Debug)]
-enum InitError {
+enum InitErr {
 	Ramhorns(ramhorns::Error),
 	Post(PostErr)
 }
 
-impl From<ramhorns::Error> for InitError {
+impl From<ramhorns::Error> for InitErr {
     fn from(er: ramhorns::Error) -> Self {
-        InitError::Ramhorns(er)
+        InitErr::Ramhorns(er)
     }
 }
 
-impl From<PostErr> for InitError {
+impl From<PostErr> for InitErr {
     fn from(er: PostErr) -> Self {
-        InitError::Post(er)
+        InitErr::Post(er)
     }
 }
 
-impl warp::reject::Reject for InitError {}
-
-async fn handle_landing(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("index.template.html").ok_or(PostRouteErr::NoTemplate)?;
-	
-	#[derive(Content)]
-	struct TemplatingContext<'a> {
-		posts: &'a Vec<&'a Post>,
-		context: &'a Context
-	}
-	
-	let templating_context = TemplatingContext {
-		posts: &app.posts.all_posts.iter().take(5).collect::<Vec<_>>(),
-		context: &app.context
-	};
-	
-	let rendered = template.render(&templating_context);
-	Ok(warp::reply::html(rendered))
+impl std::fmt::Display for InitErr {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+			InitErr::Ramhorns(e) => write!(f, "ramhorns error: {}", e),
+			InitErr::Post(e) => write!(f, "post error: {}", e)
+		}
+    }
 }
 
-async fn handle_discord(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("discord.template.html").ok_or(PostRouteErr::NoTemplate)?;
-	
-	#[derive(Content)]
-	struct TemplatingContext<'a> {
-		context: &'a Context
-	}
-	
-	let templating_context = TemplatingContext {
-		context: &app.context
-	};
-	
-	let rendered = template.render(&templating_context);
-	Ok(warp::reply::html(rendered))
-}
-
-async fn handle_post(post_name: String, app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("post.template.html").ok_or(PostRouteErr::NoTemplate)?;
-	
-	#[derive(Content)]
-	struct TemplatingContext<'a> {
-		post: &'a Post,
-		context: &'a Context
-	}
-	
-	let templating_context = TemplatingContext {
-		post: app.posts.get_by_slug(&post_name).ok_or(PostRouteErr::NoPost(post_name))?,
-		context: &app.context
-	};
-	
-	let rendered = template.render(&templating_context);
-	Ok(warp::reply::html(rendered))
-}
-
-async fn handle_post_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("post_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
-	
-	#[derive(Content)]
-	struct TemplatingContext<'a> {
-		posts: &'a Vec<Post>,
-		count: usize,
-		many: bool,
-		context: &'a Context
-	}
-	
-	let count = app.posts.all_posts.len();
-	
-	let templating_context = TemplatingContext {
-		posts: &app.posts.all_posts,
-		count,
-		many: count > 1,
-		context: &app.context
-	};
-	
-	let rendered = template.render(&templating_context);
-	Ok(warp::reply::html(rendered))
-}
-
-async fn handle_tag(tag: String, app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("tag.template.html").ok_or(PostRouteErr::NoTemplate)?;
-	
-	#[derive(Content)]
-	struct TemplatingContext<'a> {
-		posts: &'a Vec<&'a Post>,
-		count: usize,
-		many: bool,
-		tag: &'a String,
-		context: &'a Context
-	}
-	
-	let tagged_posts = app.posts.get_by_tag(&tag);
-	
-	let templating_context = TemplatingContext {
-		posts: &tagged_posts,
-		count: tagged_posts.len(),
-		many: tagged_posts.len() > 1,
-		tag: &tag,
-		context: &app.context
-	};
-	
-	let rendered = template.render(&templating_context);
-	Ok(warp::reply::html(rendered))
-}
-
-async fn handle_tag_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("tag_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
-	
-	#[derive(Content)]
-	struct TemplatingContext<'a> {
-		tags: Vec<&'a Tag>,
-		count: usize,
-		many: bool,
-		context: &'a Context
-	}
-	
-	let mut tags = app.posts.posts_by_tag.keys().collect::<Vec<_>>();
-	tags.sort();
-	let count = tags.len();
-	
-	let templating_context = TemplatingContext {
-		tags,
-		count,
-		many: count > 1,
-		context: &app.context
-	};
-	
-	let rendered = template.render(&templating_context);
-	Ok(warp::reply::html(rendered))
-}
-
-#[derive(Debug)]
-enum PostRouteErr {
-	NoPost(String),
-	NoTemplate
-}
-
-impl warp::reject::Reject for PostRouteErr {}
-
-async fn handle_reload(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let new_app = init_app().await?;
-	
-	let mut a = app.write().unwrap();
-	*a = Arc::new(new_app);
-	
-	Ok(warp::reply::html("reloaded"))
-}
+impl warp::reject::Reject for InitErr {}
