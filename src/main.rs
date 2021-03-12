@@ -13,7 +13,7 @@ pub struct App {
 	pub content: RwLock<DynamicContent>
 }
 
-#[derive(Content, Clone)] //TODO remove derive clone
+#[derive(Content)]
 pub struct Settings {
 	pub hostname: String,
 	#[ramhorns(skip)]
