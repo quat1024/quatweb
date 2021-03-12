@@ -1,25 +1,19 @@
 mod post;
 mod time;
 mod routes;
+mod settings;
 
-use std::{convert::Infallible, net::{IpAddr, Ipv4Addr, SocketAddr}, sync::{Arc, RwLock}, thread};
+use std::{convert::Infallible, net::SocketAddr, sync::{Arc, RwLock}, thread};
 use post::{Post, PostCollection, PostErr, Tag};
 use ramhorns::{Content, Ramhorns};
+use settings::Settings;
 use tokio::{runtime::Runtime, sync::{mpsc::{self, UnboundedReceiver}, oneshot}};
 use warp::{Filter, Rejection, Reply};
+use serde::Deserialize;
 
 pub struct App {
 	pub settings: Settings,
 	pub content: RwLock<DynamicContent>
-}
-
-#[derive(Content)]
-pub struct Settings {
-	pub hostname: String,
-	pub tls: bool,
-	#[ramhorns(skip)]
-	pub addr: SocketAddr,
-	pub title: String,
 }
 
 pub struct DynamicContent {
@@ -28,11 +22,10 @@ pub struct DynamicContent {
 }
 
 fn main() {
-	let settings = Settings {
-		hostname: "jiji.srv.highlysuspect.agency:12345".into(),
-		addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 80),
-		tls: false,
-		title: "Highly Suspect Agency".into()
+	//parse settings from environment variables
+	let settings = match envy::prefixed("QUAT_").from_env::<Settings>() {
+		Ok(settings) => settings,
+		Err(e) => panic!("error parsing environment variables: {}", e)
 	};
 	
 	//server setup
