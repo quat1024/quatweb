@@ -9,25 +9,39 @@ use tokio::{runtime::Runtime, sync::{mpsc::{self, UnboundedReceiver}, oneshot}};
 use warp::{Filter, Rejection, Reply};
 
 pub struct App {
-	pub ramhorns: Ramhorns,
-	pub posts: PostCollection,
-	pub context: Context
+	pub settings: Settings,
+	pub content: RwLock<DynamicContent>
 }
 
-#[derive(Content)]
-pub struct Context {
+#[derive(Content, Clone)] //TODO remove derive clone
+pub struct Settings {
 	pub hostname: String,
-	pub title: String
+	#[ramhorns(skip)]
+	pub addr: SocketAddr,
+	pub title: String,
+}
+
+pub struct DynamicContent {
+	pub ramhorns: Ramhorns,
+	pub posts: PostCollection
 }
 
 fn main() {
+	let settings = Settings {
+		hostname: "jiji.srv.highlysuspect.agency:12345".into(),
+		addr: SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 80),
+		title: "Highly Suspect Agency".into()
+	};
+	
 	//server setup
-	let rt = Arc::new(Runtime::new().unwrap());
-	let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 80);
+	let rt = Runtime::new().unwrap();
 	
 	rt.block_on(async {
 		//first time app startup
-		let app = Arc::new(RwLock::new(Arc::new(init_app().await.expect("failed to initialize app"))));
+		let app = Arc::new(App {
+			settings,
+			content: RwLock::new(init_content().await.expect("failed to initialize app"))
+		});
 		
 		//shutdown trigger
 		let (tx, rx) = oneshot::channel::<()>();
@@ -36,7 +50,7 @@ fn main() {
 		rt.spawn(control(app.clone(), tx, stdin_thread()));
 		
 		//setup server
-		let (_, server) = warp::serve(routes::create_routes(app)).bind_with_graceful_shutdown(addr, async { rx.await.ok().unwrap() });
+		let (_, server) = warp::serve(routes::create_routes(app.clone())).bind_with_graceful_shutdown(app.settings.addr, async { rx.await.ok().unwrap() });
 		
 		//and let's go!
 		server.await;
@@ -55,17 +69,17 @@ fn stdin_thread() -> UnboundedReceiver<String> {
 }
 
 /// Parses control commands from the stdin thread.
-async fn control(app: Arc<RwLock<Arc<App>>>, shutdown_tx: oneshot::Sender<()>, mut stdin: UnboundedReceiver<String>) {
+async fn control(app: Arc<App>, shutdown_tx: oneshot::Sender<()>, mut stdin: UnboundedReceiver<String>) {
 	while let Some(line) = stdin.recv().await {
 		match line.trim().as_ref() {
 			"reload" => {
-				match init_app().await {
-					Ok(new_app) => {
-						*app.write().unwrap() = Arc::new(new_app);
-						println!("Reloaded app");
+				match init_content().await {
+					Ok(new_content) => {
+						*app.content.write().unwrap() = new_content;
+						println!("Reloaded contents");
 					},
 					Err(e) => {
-						eprintln!("error reloading app: {}", e);
+						eprintln!("error reloading contents: {}", e);
 					}
 				}
 			},
@@ -79,42 +93,38 @@ async fn control(app: Arc<RwLock<Arc<App>>>, shutdown_tx: oneshot::Sender<()>, m
 	}
 }
 
-async fn init_app() -> Result<App, InitErr> {
-	Ok(App {
+async fn init_content() -> Result<DynamicContent, InitContentErr> {
+	Ok(DynamicContent {
 		ramhorns: Ramhorns::from_folder("www/template")?,
-		posts: PostCollection::from_folder("www/post").await?,
-		context: Context { //todo find a better spot to put this.
-			hostname: "localhost".into(),
-			title: "Highly Suspect Agency".into()
-		}
+		posts: PostCollection::from_folder("www/post").await?
 	})
 }
 
 #[derive(Debug)]
-enum InitErr {
+enum InitContentErr {
 	Ramhorns(ramhorns::Error),
 	Post(PostErr)
 }
 
-impl From<ramhorns::Error> for InitErr {
+impl From<ramhorns::Error> for InitContentErr {
     fn from(er: ramhorns::Error) -> Self {
-        InitErr::Ramhorns(er)
+        InitContentErr::Ramhorns(er)
     }
 }
 
-impl From<PostErr> for InitErr {
+impl From<PostErr> for InitContentErr {
     fn from(er: PostErr) -> Self {
-        InitErr::Post(er)
+        InitContentErr::Post(er)
     }
 }
 
-impl std::fmt::Display for InitErr {
+impl std::fmt::Display for InitContentErr {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-			InitErr::Ramhorns(e) => write!(f, "ramhorns error: {}", e),
-			InitErr::Post(e) => write!(f, "post error: {}", e)
+			InitContentErr::Ramhorns(e) => write!(f, "ramhorns error: {}", e),
+			InitContentErr::Post(e) => write!(f, "post error: {}", e)
 		}
     }
 }
 
-impl warp::reject::Reject for InitErr {}
+impl warp::reject::Reject for InitContentErr {}

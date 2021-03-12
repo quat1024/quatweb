@@ -2,11 +2,11 @@ use warp::filters::BoxedFilter;
 
 use crate::*;
 
-pub fn create_routes(app: Arc<RwLock<Arc<App>>>) -> BoxedFilter<(impl Reply,)> {
+pub fn create_routes<'a>(app: Arc<App>) -> BoxedFilter<(impl Reply + 'a,)> {
 	//routes
 	let static_pages = warp::fs::dir("www/static");
 	
-	fn with_app(app: Arc<RwLock<Arc<App>>>) -> impl Filter<Extract = (Arc<RwLock<Arc<App>>>,), Error = Infallible> + Clone {
+	fn with_app(app: Arc<App>) -> impl Filter<Extract = (Arc<App>,), Error = Infallible> + Clone {
 		warp::any().map(move || app.clone())
 	}
 	
@@ -44,89 +44,90 @@ pub fn create_routes(app: Arc<RwLock<Arc<App>>>) -> BoxedFilter<(impl Reply,)> {
 	).boxed()
 }
 
-async fn handle_landing(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("index.template.html").ok_or(PostRouteErr::NoTemplate)?;
+async fn handle_landing(app: Arc<App>) -> Result<impl Reply, Rejection> {
+	let content: &DynamicContent = &app.content.read().unwrap();
+	let template = content.ramhorns.get("index.template.html").ok_or(PostRouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
 		posts: &'a Vec<&'a Post>,
-		context: &'a Context
+		settings: &'a Settings
 	}
 	
 	let templating_context = TemplatingContext {
-		posts: &app.posts.all_posts.iter().take(5).collect::<Vec<_>>(),
-		context: &app.context
+		posts: &content.posts.all_posts.iter().take(5).collect::<Vec<_>>(),
+		settings: &app.settings
 	};
 	
 	let rendered = template.render(&templating_context);
 	Ok(warp::reply::html(rendered))
 }
 
-async fn handle_discord(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("discord.template.html").ok_or(PostRouteErr::NoTemplate)?;
+async fn handle_discord(app: Arc<App>) -> Result<impl Reply, Rejection> {
+	let content: &DynamicContent = &app.content.read().unwrap();
+	let template = content.ramhorns.get("discord.template.html").ok_or(PostRouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
-		context: &'a Context
+		settings: &'a Settings
 	}
 	
 	let templating_context = TemplatingContext {
-		context: &app.context
+		settings: &app.settings
 	};
 	
 	let rendered = template.render(&templating_context);
 	Ok(warp::reply::html(rendered))
 }
 
-async fn handle_post(post_name: String, app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("post.template.html").ok_or(PostRouteErr::NoTemplate)?;
+async fn handle_post(post_name: String, app: Arc<App>) -> Result<impl Reply, Rejection> {
+	let content: &DynamicContent = &app.content.read().unwrap();
+	let template = content.ramhorns.get("post.template.html").ok_or(PostRouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
 		post: &'a Post,
-		context: &'a Context
+		settings: &'a Settings
 	}
 	
 	let templating_context = TemplatingContext {
-		post: app.posts.get_by_slug(&post_name).ok_or(PostRouteErr::NoPost(post_name))?,
-		context: &app.context
+		post: content.posts.get_by_slug(&post_name).ok_or(PostRouteErr::NoPost(post_name))?,
+		settings: &app.settings
 	};
 	
 	let rendered = template.render(&templating_context);
 	Ok(warp::reply::html(rendered))
 }
 
-async fn handle_post_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("post_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
+async fn handle_post_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
+	let content: &DynamicContent = &app.content.read().unwrap();
+	let template = content.ramhorns.get("post_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
 		posts: &'a Vec<Post>,
 		count: usize,
 		many: bool,
-		context: &'a Context
+		settings: &'a Settings
 	}
 	
-	let count = app.posts.all_posts.len();
+	let posts = &content.posts.all_posts;
+	let count = posts.len();
 	
 	let templating_context = TemplatingContext {
-		posts: &app.posts.all_posts,
+		posts,
 		count,
 		many: count > 1,
-		context: &app.context
+		settings: &app.settings
 	};
 	
 	let rendered = template.render(&templating_context);
 	Ok(warp::reply::html(rendered))
 }
 
-async fn handle_tag(tag: String, app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("tag.template.html").ok_or(PostRouteErr::NoTemplate)?;
+async fn handle_tag(tag: String, app: Arc<App>) -> Result<impl Reply, Rejection> {
+	let content: &DynamicContent = &app.content.read().unwrap();
+	let template = content.ramhorns.get("tag.template.html").ok_or(PostRouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -134,36 +135,36 @@ async fn handle_tag(tag: String, app: Arc<RwLock<Arc<App>>>) -> Result<impl Repl
 		count: usize,
 		many: bool,
 		tag: &'a String,
-		context: &'a Context
+		settings: &'a Settings
 	}
 	
-	let tagged_posts = app.posts.get_by_tag(&tag);
+	let tagged_posts = content.posts.get_by_tag(&tag);
 	
 	let templating_context = TemplatingContext {
 		posts: &tagged_posts,
 		count: tagged_posts.len(),
 		many: tagged_posts.len() > 1,
 		tag: &tag,
-		context: &app.context
+		settings: &app.settings
 	};
 	
 	let rendered = template.render(&templating_context);
 	Ok(warp::reply::html(rendered))
 }
 
-async fn handle_tag_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Rejection> {
-	let app = app.read().unwrap().clone();
-	let template = app.ramhorns.get("tag_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
+async fn handle_tag_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
+	let content: &DynamicContent = &app.content.read().unwrap();
+	let template = content.ramhorns.get("tag_index.template.html").ok_or(PostRouteErr::NoTemplate)?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
 		tags: Vec<&'a Tag>,
 		count: usize,
 		many: bool,
-		context: &'a Context
+		settings: &'a Settings
 	}
 	
-	let mut tags = app.posts.posts_by_tag.keys().collect::<Vec<_>>();
+	let mut tags = content.posts.posts_by_tag.keys().collect::<Vec<_>>();
 	tags.sort();
 	let count = tags.len();
 	
@@ -171,7 +172,7 @@ async fn handle_tag_index(app: Arc<RwLock<Arc<App>>>) -> Result<impl Reply, Reje
 		tags,
 		count,
 		many: count > 1,
-		context: &app.context
+		settings: &app.settings
 	};
 	
 	let rendered = template.render(&templating_context);
