@@ -71,7 +71,7 @@ pub fn create_routes<'a>(app: Arc<App>) -> BoxedFilter<(impl Reply + 'a,)> {
 		.or(post_route)
 		.or(tag_index_route)
 		.or(tag_route)
-	).recover(move |rej| recover(rej, app.clone())).boxed()
+	).recover(move |rej| recover(rej, app.clone())).with(warp::log("quatweb::routes")).boxed()
 }
 
 async fn recover(rej: Rejection, app: Arc<App>) -> Result<impl Reply, Infallible> {

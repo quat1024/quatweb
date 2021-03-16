@@ -4,6 +4,7 @@ mod settings;
 mod ext;
 
 use std::{convert::Infallible, net::SocketAddr, sync::{Arc, RwLock}, thread};
+use log::*;
 use post::{Post, PostCollection, PostErr};
 use routes::{DynamicContent, InitContentErr};
 use ext::Tag;
@@ -20,6 +21,9 @@ pub struct App {
 }
 
 fn main() {
+	pretty_env_logger::init_timed();
+	info!("🐉 dragn time");
+	
 	//parse settings from environment variables
 	let settings = match envy::prefixed("QUAT_").from_env::<Settings>() {
 		Ok(settings) => settings,
@@ -49,11 +53,13 @@ fn main() {
 				.cert_path("www/keys/cert.pem")
 				.key_path("www/keys/key.rsa")
 				.bind_with_graceful_shutdown(app.settings.addr, async { shut_rx.await.ok().unwrap() });
-			
+				
+			info!("Server started with TLS.");
 			server.await;
 		} else {
 			let(_, server) = warp::serve(routes::create_routes(app.clone())).bind_with_graceful_shutdown(app.settings.addr, async { shut_rx.await.ok().unwrap() });
 			
+			warn!("Server started without any TLS!");
 			server.await;
 		}
 	});
@@ -66,7 +72,7 @@ fn stdin_thread() -> UnboundedReceiver<String> {
 		let mut buf = String::new();
 		std::io::stdin().read_line(&mut buf).unwrap();
 		tx.send(buf).expect("couldn't send stdin line");
-	}).expect("Failed to spawn standard input thread");
+	}).expect("Failed to spawn standard input reading thread");
 	rx
 }
 
@@ -77,19 +83,19 @@ async fn control(app: Arc<App>, shutdown_tx: oneshot::Sender<()>, mut stdin: Unb
 			"reload" => {
 				match rebuild_dynamic_content(&app).await {
 					Ok(()) => {
-						println!("Reloaded contents");
+						info!("Reloaded contents");
 					},
 					Err(e) => {
-						eprintln!("error reloading contents: {}", e);
+						error!("error reloading contents: {}", e);
 					}
 				}
 			},
 			"quit" => {
-				eprintln!("Manually triggered shutdown");
+				error!("Manually triggered shutdown");
 				shutdown_tx.send(()).unwrap();
 				return;
 			}
-			other => eprintln!("unknown command: {}", other)
+			other => error!("unknown command: {}", other)
 		}
 	}
 }

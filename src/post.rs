@@ -117,6 +117,7 @@ impl PostCollection {
 		let mut reader = tokio::fs::read_dir(path).await?;
 		while let Some(entry) = reader.next_entry().await? {
 			if entry.file_type().await?.is_file() {
+				debug!("parsing post at {}", entry.path().display());
 				all_posts.push(Post::from_file(entry.path()).await?);
 			}
 		}
