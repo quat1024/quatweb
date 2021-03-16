@@ -75,11 +75,14 @@ pub fn create_routes<'a>(app: Arc<App>) -> BoxedFilter<(impl Reply + 'a,)> {
 }
 
 async fn recover(rej: Rejection, app: Arc<App>) -> Result<impl Reply, Infallible> {
+	error!("Attempting to recover from rejection: {:?}", rej);
+	
 	let content: &DynamicContent = &app.content.read().unwrap();
 	let template = content.ramhorns.get("error.template.html");
 	if template.is_none() {
 		//Not much else to do
 		let message = format!("Encountered an error, but couldn't load the fancy error page. {:?}", rej);
+		error!("Could not load the error page!");
 		let html = reply::html(message);
 		return Ok(reply::with_status(html, StatusCode::INTERNAL_SERVER_ERROR));
 	}
