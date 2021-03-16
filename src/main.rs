@@ -5,8 +5,9 @@ mod ext;
 
 use std::{convert::Infallible, net::SocketAddr, sync::{Arc, RwLock}, thread};
 use post::{Post, PostCollection, PostErr};
+use routes::{DynamicContent, InitContentErr};
 use ext::Tag;
-use ramhorns::{Content, Ramhorns};
+use ramhorns::{Content, Ramhorns, Template};
 use settings::Settings;
 use tokio::{runtime::Runtime, sync::{mpsc::{self, UnboundedReceiver}, oneshot}};
 use warp::{Filter, Rejection, Reply};
@@ -18,11 +19,6 @@ pub struct App {
 	pub content: RwLock<DynamicContent>
 }
 
-pub struct DynamicContent {
-	pub ramhorns: Ramhorns,
-	pub posts: PostCollection
-}
-
 fn main() {
 	//parse settings from environment variables
 	let settings = match envy::prefixed("QUAT_").from_env::<Settings>() {
@@ -31,20 +27,20 @@ fn main() {
 	};
 	
 	//server setup
-	let rt = Runtime::new().unwrap();
+	let rt = Arc::new(Runtime::new().unwrap());
 	
 	rt.block_on(async {
 		//first time app startup
 		let app = Arc::new(App {
 			settings,
-			content: RwLock::new(init_content().await.expect("failed to initialize app"))
+			content: RwLock::new(DynamicContent::init().await.expect("failed to initialize app"))
 		});
 		
 		//shutdown trigger
-		let (tx, rx) = oneshot::channel::<()>();
+		let (shut_tx, shut_rx) = oneshot::channel::<()>();
 		
 		//setup control console
-		rt.spawn(control(app.clone(), tx, stdin_thread()));
+		rt.spawn(control(app.clone(), shut_tx, stdin_thread()));
 		
 		//setup server
 		if app.settings.tls {
@@ -52,11 +48,11 @@ fn main() {
 				.tls()
 				.cert_path("www/keys/cert.pem")
 				.key_path("www/keys/key.rsa")
-				.bind_with_graceful_shutdown(app.settings.addr, async { rx.await.ok().unwrap() });
+				.bind_with_graceful_shutdown(app.settings.addr, async { shut_rx.await.ok().unwrap() });
 			
 			server.await;
 		} else {
-			let(_, server) = warp::serve(routes::create_routes(app.clone())).bind_with_graceful_shutdown(app.settings.addr, async { rx.await.ok().unwrap() });
+			let(_, server) = warp::serve(routes::create_routes(app.clone())).bind_with_graceful_shutdown(app.settings.addr, async { shut_rx.await.ok().unwrap() });
 			
 			server.await;
 		}
@@ -79,9 +75,8 @@ async fn control(app: Arc<App>, shutdown_tx: oneshot::Sender<()>, mut stdin: Unb
 	while let Some(line) = stdin.recv().await {
 		match line.trim().as_ref() {
 			"reload" => {
-				match init_content().await {
-					Ok(new_content) => {
-						*app.content.write().unwrap() = new_content;
+				match rebuild_dynamic_content(&app).await {
+					Ok(()) => {
 						println!("Reloaded contents");
 					},
 					Err(e) => {
@@ -99,19 +94,8 @@ async fn control(app: Arc<App>, shutdown_tx: oneshot::Sender<()>, mut stdin: Unb
 	}
 }
 
-async fn init_content() -> Result<DynamicContent, InitContentErr> {
-	Ok(DynamicContent {
-		ramhorns: Ramhorns::from_folder("www/template")?,
-		posts: PostCollection::from_folder("www/post").await?
+async fn rebuild_dynamic_content(app: &Arc<App>) -> Result<(), InitContentErr> {
+	DynamicContent::init().await.map(|new_content| {
+		*app.content.write().unwrap() = new_content;
 	})
 }
-
-#[derive(Debug, Error)]
-enum InitContentErr {
-	#[error("Error loading templates")]
-	Ramhorns(#[from] ramhorns::Error),
-	#[error("Error parsing posts")]
-	Post(#[from] PostErr)
-}
-
-impl warp::reject::Reject for InitContentErr {}

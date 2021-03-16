@@ -2,6 +2,34 @@ use warp::{filters::BoxedFilter, hyper::StatusCode, reply};
 
 use crate::*;
 
+pub struct DynamicContent {
+	pub ramhorns: Ramhorns,
+	pub posts: PostCollection
+}
+
+impl DynamicContent {
+	pub async fn init() -> Result<DynamicContent, InitContentErr> {
+		Ok(DynamicContent {
+			ramhorns: Ramhorns::from_folder("www/content/templates")?,
+			posts: PostCollection::from_folder("www/content/posts").await?
+		})
+	}
+	
+	pub fn get_template(&self, tmpl: &'static str) -> Result<&Template, RouteErr> {
+		self.ramhorns.get(tmpl).ok_or_else(|| RouteErr::NoTemplate(tmpl.to_string()))
+	}
+}
+
+#[derive(Debug, Error)]
+pub enum InitContentErr {
+	#[error("Error loading templates")]
+	Ramhorns(#[from] ramhorns::Error),
+	#[error("Error parsing posts")]
+	Post(#[from] PostErr)
+}
+
+impl warp::reject::Reject for InitContentErr {}
+
 pub fn create_routes<'a>(app: Arc<App>) -> BoxedFilter<(impl Reply + 'a,)> {
 	//routes
 	let static_pages = warp::fs::dir("www/static");
@@ -60,18 +88,20 @@ async fn recover(rej: Rejection, app: Arc<App>) -> Result<impl Reply, Infallible
 	let code: StatusCode;
 	let message: String;
 	
+	//TODO there has to be a cuter way to do this, right
+	
 	if rej.is_not_found() {
 		code = StatusCode::NOT_FOUND;
-		message = "Not Found.".into();
-	} else if let Some(RouteErr::NoTemplate) = rej.find() {
+		message = "Not Found".into();
+	} else if let Some(RouteErr::NoTemplate(tmpl)) = rej.find() {
 		code = StatusCode::INTERNAL_SERVER_ERROR;
-		message = "Missing template.".into();
+		message = format!("{}", RouteErr::NoTemplate(tmpl.clone()));
 	} else if let Some(RouteErr::NoPost(post)) = rej.find() {
 		code = StatusCode::NOT_FOUND;
-		message = format!("No post at {}.", post);
+		message = format!("{}", RouteErr::NoPost(post.clone()));
 	} else if let Some(RouteErr::NoTag(tag)) = rej.find() {
 		code = StatusCode::NOT_FOUND;
-		message = format!("No tag named {}.", tag);
+		message = format!("{}", RouteErr::NoTag(tag.clone()));
 	} else {
 		code = StatusCode::INTERNAL_SERVER_ERROR;
 		message = format!("Unhandled: {:?}", rej);
@@ -97,7 +127,7 @@ async fn recover(rej: Rejection, app: Arc<App>) -> Result<impl Reply, Infallible
 
 async fn handle_landing(app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("index.template.html").ok_or(RouteErr::NoTemplate)?;
+	let template = content.get_template("index.template.html")?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -116,7 +146,7 @@ async fn handle_landing(app: Arc<App>) -> Result<impl Reply, Rejection> {
 
 async fn handle_discord(app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("discord.template.html").ok_or(RouteErr::NoTemplate)?;
+	let template = content.get_template("discord.template.html")?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -133,7 +163,7 @@ async fn handle_discord(app: Arc<App>) -> Result<impl Reply, Rejection> {
 
 async fn handle_post(post_name: String, app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("post.template.html").ok_or(RouteErr::NoTemplate)?;
+	let template = content.get_template("post.template.html")?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -152,7 +182,7 @@ async fn handle_post(post_name: String, app: Arc<App>) -> Result<impl Reply, Rej
 
 async fn handle_post_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("post_index.template.html").ok_or(RouteErr::NoTemplate)?;
+	let template = content.get_template("post_index.template.html")?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -178,7 +208,7 @@ async fn handle_post_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
 
 async fn handle_tag(tag: String, app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("tag.template.html").ok_or(RouteErr::NoTemplate)?;
+	let template = content.get_template("tag.template.html")?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -210,7 +240,7 @@ async fn handle_tag(tag: String, app: Arc<App>) -> Result<impl Reply, Rejection>
 
 async fn handle_tag_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
 	let content: &DynamicContent = &app.content.read().unwrap();
-	let template = content.ramhorns.get("tag_index.template.html").ok_or(RouteErr::NoTemplate)?;
+	let template = content.get_template("tag_index.template.html")?;
 	
 	#[derive(Content)]
 	struct TemplatingContext<'a> {
@@ -237,9 +267,9 @@ async fn handle_tag_index(app: Arc<App>) -> Result<impl Reply, Rejection> {
 
 #[derive(Debug, Error)]
 #[allow(clippy::enum_variant_names)]
-enum RouteErr {
-	#[error("Could not load a template")]
-	NoTemplate,
+pub enum RouteErr {
+	#[error("Could not load template {0}")]
+	NoTemplate(String),
 	#[error("No post with slug {0}")]
 	NoPost(String),
 	#[error("No tag {0}")]
