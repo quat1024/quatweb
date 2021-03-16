@@ -22,6 +22,7 @@ pub struct PostMetadata {
 	pub description: Option<String>,
 	pub created_date: MyNaiveDate,
 	pub modified_date: Option<MyNaiveDate>,
+	pub draft: bool,
 	pub tags: Vec<Tag>
 }
 
@@ -78,6 +79,7 @@ impl Post {
 			description: kv.remove("description"),
 			created_date: kv.remove("created_date").ok_or(PostErr::NoDate)?.parse().map_err(PostErr::DateParse)?,
 			modified_date,
+			draft: kv.remove("draft").and_then(|x| x.parse().ok()).unwrap_or(false), //too lazy to make a new error case here
 			tags: kv.remove("tags").unwrap_or_else(|| "".into()).split(',').map(|x| Tag(x.trim().to_owned())).collect()
 		})
 	}

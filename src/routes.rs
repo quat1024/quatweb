@@ -139,7 +139,7 @@ async fn handle_landing(app: Arc<App>) -> Result<impl Reply, Rejection> {
 	}
 	
 	let templating_context = TemplatingContext {
-		posts: &content.posts.all_posts.iter().take(5).collect::<Vec<_>>(),
+		posts: &content.posts.all_posts.iter().take(5).filter(|post| !post.meta.draft).collect::<Vec<_>>(),
 		settings: &app.settings
 	};
 	

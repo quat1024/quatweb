@@ -4,6 +4,7 @@ author=quat
 description=What I learned making this new site!
 created_date=Mar 16, 2021
 tags=rust, design
+draft=true
 ---
 So uh, hi, this is my new website! Fancy that, huh.
 
