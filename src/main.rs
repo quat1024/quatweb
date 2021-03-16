@@ -21,6 +21,12 @@ pub struct App {
 }
 
 fn main() {
+	//Annoyingly pretty-env-logger doesn't use the `Env` system from env-logger. That's annoying.
+	//So I actually have to set the environment variable myself. https://github.com/seanmonstar/pretty-env-logger/issues/41
+	if std::env::var_os("RUST_LOG").is_none() {
+		std::env::set_var("RUST_LOG", "info");
+	}
+	
 	pretty_env_logger::init_timed();
 	info!("🐉 dragn time");
 	
