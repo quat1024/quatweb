@@ -28,7 +28,7 @@ fn main() {
 	}
 	
 	pretty_env_logger::init_timed();
-	info!("🐉 dragn time");
+	info!("<dragon emoji> dragn time");
 	
 	//parse settings from environment variables
 	let settings = match envy::prefixed("QUAT_").from_env::<Settings>() {
@@ -54,17 +54,19 @@ fn main() {
 		
 		//setup server
 		if app.settings.tls {
-			let(_, server) = warp::serve(routes::create_routes(app.clone()))
+			let(addr, server) = warp::serve(routes::create_routes(app.clone()))
 				.tls()
 				.cert_path("www/keys/cert.pem")
 				.key_path("www/keys/key.rsa")
 				.bind_with_graceful_shutdown(app.settings.addr, async { shut_rx.await.ok().unwrap() });
-				
+			
+			info!("Server address: {:?}", addr);
 			info!("Server started with TLS.");
 			server.await;
 		} else {
-			let(_, server) = warp::serve(routes::create_routes(app.clone())).bind_with_graceful_shutdown(app.settings.addr, async { shut_rx.await.ok().unwrap() });
+			let(addr, server) = warp::serve(routes::create_routes(app.clone())).bind_with_graceful_shutdown(app.settings.addr, async { shut_rx.await.ok().unwrap() });
 			
+			info!("Server address: {:?}", addr);
 			warn!("Server started without any TLS!");
 			server.await;
 		}
