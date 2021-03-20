@@ -214,6 +214,11 @@ hr.think:after {
 	background-image: url("/img/tiny_dragnthink.png");
 }
 
+.youtube {
+	display: block;
+	margin: 0 auto;
+}
+
 @media (max-width: 40rem) {
 	body {
 		font-size: 1em;
