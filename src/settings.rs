@@ -1,17 +1,18 @@
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::IpAddr;
+use std::net::Ipv4Addr;
 
 use crate::*;
 
 #[derive(Content, Deserialize, Debug)]
 pub struct Settings {
-	#[serde(default="default_hostname")]
+	#[serde(default = "default_hostname")]
 	pub hostname: String,
-	
+
 	#[ramhorns(skip)]
-	#[serde(default="default_addr")]
+	#[serde(default = "default_addr")]
 	pub addr: SocketAddr,
-	
-	#[serde(default="default_title")]
+
+	#[serde(default = "default_title")]
 	pub title: String,
 }
 

@@ -1,6 +1,9 @@
-use std::{ops::Deref, str::FromStr};
-use serde_with::{serde_as, DisplayFromStr};
+use std::ops::Deref;
+use std::str::FromStr;
+
 use chrono::NaiveDate;
+use serde_with::serde_as;
+use serde_with::DisplayFromStr;
 
 use crate::*;
 
@@ -12,9 +15,9 @@ use crate::*;
 pub struct Tag(pub String);
 
 impl From<&String> for Tag {
-    fn from(s: &String) -> Self {
-        Tag(s.clone())
-    }
+	fn from(s: &String) -> Self {
+		Tag(s.clone())
+	}
 }
 
 ///A wrapper around [chrono::NaiveDate] that serializes and deserializes to Ramhorns and Serde using my favorite date format.
@@ -22,43 +25,41 @@ impl From<&String> for Tag {
 #[derive(Clone, PartialEq, Eq, Ord, PartialOrd, Hash, Debug, Deserialize)]
 pub struct MyNaiveDate {
 	#[serde_as(as = "DisplayFromStr")]
-	inner: NaiveDate
+	inner: NaiveDate,
 }
 
 static EPIC_DATE_FORMAT: &str = "%b %d, %Y";
 
 impl FromStr for MyNaiveDate {
-    type Err = chrono::ParseError;
+	type Err = chrono::ParseError;
 
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        Ok(NaiveDate::parse_from_str(s, EPIC_DATE_FORMAT)?.into())
-    }
+	fn from_str(s: &str) -> Result<Self, Self::Err> {
+		Ok(NaiveDate::parse_from_str(s, EPIC_DATE_FORMAT)?.into())
+	}
 }
 
 impl From<NaiveDate> for MyNaiveDate {
-    fn from(n: NaiveDate) -> Self {
-        MyNaiveDate {
-			inner: n
-		}
-    }
+	fn from(n: NaiveDate) -> Self {
+		MyNaiveDate { inner: n }
+	}
 }
 
 impl Deref for MyNaiveDate {
-    type Target = NaiveDate;
+	type Target = NaiveDate;
 
-    fn deref(&self) -> &Self::Target {
-        &self.inner
-    }
+	fn deref(&self) -> &Self::Target {
+		&self.inner
+	}
 }
 
 impl ToString for MyNaiveDate {
-    fn to_string(&self) -> String {
-        self.format(EPIC_DATE_FORMAT).to_string()
-    }
+	fn to_string(&self) -> String {
+		self.format(EPIC_DATE_FORMAT).to_string()
+	}
 }
 
 impl Content for MyNaiveDate {
-    fn render_escaped<E: ramhorns::encoding::Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
-        encoder.write_unescaped(&self.to_string())
-    }
+	fn render_escaped<E: ramhorns::encoding::Encoder>(&self, encoder: &mut E) -> Result<(), E::Error> {
+		encoder.write_unescaped(&self.to_string())
+	}
 }
