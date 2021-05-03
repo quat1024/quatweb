@@ -33,6 +33,8 @@ pub struct PostMetadata {
 	pub modified_date: Option<MyNaiveDate>,
 	pub draft: bool,
 	pub tags: Vec<Tag>,
+	pub newer_post: Option<usize>,
+	pub older_post: Option<usize>,
 }
 
 static FRONT_MATTER_DELIMITER: &str = "---";
@@ -86,6 +88,8 @@ impl Post {
 			modified_date,
 			draft: kv.remove("draft").and_then(|x| x.parse().ok()).unwrap_or(false), //too lazy to make a new error case here
 			tags: kv.remove("tags").unwrap_or_else(|| "".into()).split(',').map(|x| Tag(x.trim().to_owned())).collect(),
+			newer_post: None, //for now
+			older_post: None, //for now
 		})
 	}
 
@@ -130,6 +134,21 @@ impl PostCollection {
 		}
 
 		all_posts.sort_by(|a, b| b.meta.created_date.cmp(&a.meta.created_date));
+		
+		// *sigh* array_windows doesn't allow mutation
+		// for [a, b] in all_posts.array_windows() {
+		// 	a.meta.next_slug = Some(b.meta.slug.clone());
+		// 	b.meta.prev_slug = Some(a.meta.slug.clone());
+		// }
+		
+		//Populate next and previous post fields
+		let mut i = all_posts.iter_mut().enumerate().peekable();
+		while let Some((a_idx, a)) = i.next() {
+			if let Some((b_idx, b)) = i.peek_mut() {
+				a.meta.older_post = Some(*b_idx);
+				b.meta.newer_post = Some(a_idx);
+			}
+		}
 
 		let mut posts_by_slug = HashMap::new();
 		let mut posts_by_tag: HashMap<_, Vec<_>> = HashMap::new();
@@ -149,6 +168,10 @@ impl PostCollection {
 
 	pub fn get_by_slug(&self, slug: &str) -> Option<&Post> {
 		self.posts_by_slug.get(slug).map(|&index| &self.all_posts[index])
+	}
+	
+	pub fn get_by_id(&self, id: usize) -> Option<&Post> {
+		self.all_posts.get(id)
 	}
 
 	pub fn get_by_tag(&self, tag: impl Into<Tag>) -> Vec<&Post> {

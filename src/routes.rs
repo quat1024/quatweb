@@ -147,9 +147,20 @@ async fn handle_post(post_name: String, app: Arc<App>) -> Result<impl Reply, Rej
 	struct TemplatingContext<'a> {
 		post: &'a Post,
 		settings: &'a Settings,
+		newer_post: &'a Option<&'a Post>,
+		older_post: &'a Option<&'a Post>,
 	}
-
-	let templating_context = TemplatingContext { post: content.posts.get_by_slug(&post_name).ok_or(RouteErr::NoPost(post_name))?, settings: &app.settings };
+	
+	let post = content.posts.get_by_slug(&post_name).ok_or(RouteErr::NoPost(post_name))?;
+	let newer_post = &post.meta.newer_post.and_then(|id| content.posts.get_by_id(id));
+	let older_post = &post.meta.older_post.and_then(|id| content.posts.get_by_id(id));
+	
+	let templating_context = TemplatingContext {
+		post,
+		settings: &app.settings,
+		newer_post,
+		older_post,
+	};
 
 	let rendered = template.render(&templating_context);
 	Ok(warp::reply::html(rendered))
