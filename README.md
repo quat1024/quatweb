@@ -16,3 +16,12 @@ Uses the [Warp](https://github.com/seanmonstar/warp) web server framework also I
 Oi mate, you got a loicense for that code?
 
 (I don't care, do what you want. No fascists.)
+
+### Stuff
+
+Recursively downloading a website: `wget --convert-links -r -p -E localhost:80`
+
+* `--convert-links`: make all links relative
+* `-r`: recursive
+* `-p`: get all prerequisites like css and images
+* `-E`: fix file extensions
