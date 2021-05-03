@@ -74,7 +74,7 @@ fn stdin_thread() -> UnboundedReceiver<String> {
 /// Parses control commands from the stdin thread.
 async fn control(app: Arc<App>, shutdown_tx: oneshot::Sender<()>, mut stdin: UnboundedReceiver<String>) {
 	while let Some(line) = stdin.recv().await {
-		match line.trim().as_ref() {
+		match line.trim() {
 			"reload" => {
 				match rebuild_dynamic_content(&app).await {
 					Ok(()) => {
