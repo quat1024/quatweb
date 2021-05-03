@@ -53,23 +53,10 @@ fn main() {
 		rt.spawn(control(app.clone(), shut_tx, stdin_thread()));
 		
 		//setup server
-		if app.settings.tls {
-			let(addr, server) = warp::serve(routes::create_routes(app.clone()))
-				.tls()
-				.cert_path("www/keys/cert.pem")
-				.key_path("www/keys/key.rsa")
-				.bind_with_graceful_shutdown(app.settings.addr, async { shut_rx.await.ok().unwrap() });
-			
-			info!("Server address: {:?}", addr);
-			info!("Server started with TLS.");
-			server.await;
-		} else {
-			let(addr, server) = warp::serve(routes::create_routes(app.clone())).bind_with_graceful_shutdown(app.settings.addr, async { shut_rx.await.ok().unwrap() });
-			
-			info!("Server address: {:?}", addr);
-			warn!("Server started without any TLS!");
-			server.await;
-		}
+		let(addr, server) = warp::serve(routes::create_routes(app.clone())).bind_with_graceful_shutdown(app.settings.addr, async { shut_rx.await.ok().unwrap() });
+		
+		info!("Server address: {:?}", addr);
+		server.await;
 	});
 }
 

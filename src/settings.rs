@@ -7,9 +7,6 @@ pub struct Settings {
 	#[serde(default="default_hostname")]
 	pub hostname: String,
 	
-	#[serde(default="default_tls")]
-	pub tls: bool,
-	
 	#[ramhorns(skip)]
 	#[serde(default="default_addr")]
 	pub addr: SocketAddr,
@@ -20,10 +17,6 @@ pub struct Settings {
 
 fn default_hostname() -> String {
 	"http://highlysuspect.agency".into()
-}
-
-fn default_tls() -> bool {
-	false
 }
 
 fn default_addr() -> SocketAddr {
