@@ -92,6 +92,7 @@ Not really things that need to be bound to a key per se, but they're nice comman
 * `ent_fire !picker <way too many things to list here>` - There's tab-completion on this for the available options. Fires an input to the thing under your crosshair, causing something to happen to it. You can change the color, parent it to something, delete it... My favorite is `ignite` which makes it catch on fire
 * `r_portal_use_pvs_optimization 0` - Stops the screen turning white when you noclip out of bounds then disable noclip. Doesn't seem to noticeably impact framerate.
 * `+mouse_menu_playtest` - Unused co-op ping menu with thumbs-up, thumbs-down, ?, and ?!\* reactions. Broken in singleplayer and you will softlock if you press it!!!
+* `restart_level` (DOES NOT APPEAR IN AUTOCOMPLETE FOR SOME REASON) - Restarts the current map. Unlike plain ol `restart`, doesn't act funny on community maps.
 
 Okay next section!
 
