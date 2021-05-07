@@ -3,6 +3,7 @@ title=How to play Portal 2 without losing your mind
 author=quat
 description=My keybinds and setup for playing Portal 2
 created_date=May 06, 2021
+updated_date=May 07, 2021
 tags=games,portal2
 ---
 Ok so I want to collect all of the "things that 99% of the dedicated portal2 players use but noone ever really talks about" into one post I can point to. Here we go!
