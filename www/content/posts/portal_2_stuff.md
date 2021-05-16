@@ -46,10 +46,10 @@ With all that out of the way! Your bread-and-butter binds:
 	* Maybe a good idea to combine with the `noclip` bind
 * `sv_cheats 1; ent_create_portal_companion_cube` - Spawn a companion cube in the wall at your crosshair position.
 	* There are also commands like `ent_create_portal_reflector_cube` for laser cubes, `ent_create_portal_weighted_sphere` for spheres, etc. I don't have these bound to keys, but they're good to know about in case you need to spawn one.
-* `sv_cheats 1; host_timescale 3"` - Run the game at triple speed!
-* `sv_cheats 1; host_timescale 0.25"` - Run the game at quarter speed.
-* `sv_cheats 1; host_timescale 1"` - Run the game at normal speed again.
-* `sv_cheats 1; toggle host_timescale 1 3 0.25"` - One key to toggle between a bunch of game speeds, if you prefer that!
+* `sv_cheats 1; host_timescale 3` - Run the game at triple speed!
+* `sv_cheats 1; host_timescale 0.25` - Run the game at quarter speed.
+* `sv_cheats 1; host_timescale 1` - Run the game at normal speed again.
+* `sv_cheats 1; toggle host_timescale 1 3 0.25` - One key to toggle between a bunch of game speeds, if you prefer that!
 	* If you don't have sv_cheats on, `host_timescale` just changes the pitch of in-game audio, which is pretty funny
 * `ent_fire !picker use` - "Long range Use". This acts the same as the E key, but doesn't have any distance limitations, so you can pick things up and press pedestal buttons from any distance.
 	* Hilariously this is *not* a cheat command according to the game lol
